@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Protein Dose-Response Curve Generator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --border: #d6d9df;
+    --border2: #c5c8cf;
+    --text: #111827;
+    --muted: #5b6270;
+    --muted2: #9ca3af;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --accent-light: #eff6ff;
+    --good: #16a34a;
+    --warn: #d97706;
+    --bad: #dc2626;
+    --up: #dc2626;
+    --up-light: #fee2e2;
+    --down: #2563eb;
+    --down-light: #dbeafe;
+    --neutral: #6b7280;
+    --neutral-light: #f3f4f6;
+    --radius: 8px;
+  }
+  html, body { height: 100%; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 13px; background: var(--bg); color: var(--text); }
+
+  /* ── Layout shell ─────────────────────────────────────────── */
+  #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  #header { padding: 14px 20px 12px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0; }
+  #header h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  #header p  { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  #main { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+  .panel { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; }
+  #left-panel  { width: 360px; flex-shrink: 0; padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+  #center-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #center-top  { padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #plot-area   { flex: 1; min-height: 0; padding: 12px 16px; display: flex; flex-direction: column; }
+  #right-panel { width: 280px; flex-shrink: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; border-right: none; }
+
+  #bottom-panel  { height: 280px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
+  #bottom-header { padding: 9px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  #table-wrap    { flex: 1; overflow: auto; }
+
+  /* ── Typography ───────────────────────────────────────────── */
+  .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 7px; }
+  .hint { display: block; font-size: 11px; color: var(--muted2); margin-top: 4px; line-height: 1.45; }
+  .small-muted { font-size: 10.5px; color: var(--muted2); }
+
+  /* ── Experiment-type switch ──────────────────────────────── */
+  .exp-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #f9fafb; border: 1px solid var(--border); padding: 4px; border-radius: var(--radius); }
+  .exp-btn { padding: 9px 8px; border-radius: 6px; border: none; cursor: pointer; background: transparent; font-weight: 600; font-size: 12px; color: var(--muted); }
+  .exp-btn.active { background: var(--accent); color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .exp-btn:hover:not(.active) { background: #eef0f3; color: var(--text); }
+
+  /* ── Sub-mode (LFQ mapping vs manual) ─────────────────────── */
+  .submode-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .submode-tab { background: none; border: none; padding: 6px 2px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-right: 12px; }
+  .submode-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Drop zone ────────────────────────────────────────────── */
+  .dropzone { border: 2px dashed var(--border2); border-radius: var(--radius); padding: 16px 10px; background: #fafbfc; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: var(--accent-light); }
+  .dropzone strong { display: block; font-size: 12.5px; margin-bottom: 3px; }
+  .dropzone span { display: block; font-size: 11px; color: var(--muted); }
+  .dropzone-sm { padding: 10px; }
+
+  /* ── File card ────────────────────────────────────────────── */
+  .file-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: #fafbfc; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .file-card .fc-name { font-size: 12px; font-weight: 600; word-break: break-word; }
+  .file-card .fc-meta { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+  .file-card .fc-remove { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 14px; padding: 2px 6px; }
+  .file-card .fc-remove:hover { color: var(--bad); }
+
+  /* ── Status ──────────────────────────────────────────────── */
+  .status-card { font-size: 11.5px; padding: 7px 9px; border-radius: 5px; line-height: 1.4; border: 1px solid transparent; }
+  .status-info  { background: var(--accent-light); color: var(--accent-dark); border-color: #bfdbfe; }
+  .status-ok    { background: #f0fdf4; color: var(--good); border-color: #bbf7d0; }
+  .status-warn  { background: #fffbeb; color: var(--warn); border-color: #fde68a; }
+  .status-error { background: #fef2f2; color: var(--bad); border-color: #fecaca; }
+
+  /* ── Form controls ───────────────────────────────────────── */
+  label.form-label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+  .text-input, .select-input { width: 100%; border: 1px solid var(--border2); border-radius: 6px; padding: 6px 9px; font-size: 12.5px; color: var(--text); background: #fff; outline: none; font-family: inherit; }
+  .text-input:focus, .select-input:focus { border-color: var(--accent); }
+  .text-input.auto-filled { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+  .form-row { margin-bottom: 8px; }
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* ── Cards that hold group of form rows ──────────────────── */
+  .config-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: #fcfcfd; }
+
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; padding: 7px 12px; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: all .12s; font-family: inherit; }
+  .btn-primary   { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+  .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-secondary { background: #fff; color: var(--text); border-color: var(--border2); }
+  .btn-secondary:hover { background: #f3f4f6; }
+  .btn-full { width: 100%; }
+  .btn-sm   { padding: 5px 10px; font-size: 11.5px; }
+
+  /* ── Control + Treatment mapping rows ────────────────────── */
+  .mapping-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 8px; }
+  .mapping-row { display: grid; grid-template-columns: 1fr 90px 28px; gap: 6px; align-items: end; margin-bottom: 6px; }
+  .mapping-row.control-row { grid-template-columns: 1fr 28px; }
+  .mapping-row .form-label { margin-bottom: 2px; }
+  .mapping-remove { width: 28px; height: 30px; border-radius: 5px; border: 1px solid var(--border2); background: #fff; color: var(--bad); cursor: pointer; font-size: 14px; }
+  .mapping-remove:hover { background: #fef2f2; }
+  .mapping-empty { padding: 8px 10px; border: 1px dashed var(--border2); border-radius: 6px; color: var(--muted2); font-size: 11.5px; text-align: center; }
+
+  /* ── Accordion ───────────────────────────────────────────── */
+  .accordion-toggle { background: none; border: none; cursor: pointer; color: var(--accent); font-size: 12px; font-weight: 500; padding: 2px 0; display: flex; align-items: center; gap: 4px; }
+  .accordion-toggle:hover { color: var(--accent-dark); }
+  .accordion-body { display: none; margin-top: 9px; }
+  .accordion-body.open { display: block; }
+
+  /* ── Gene nav ────────────────────────────────────────────── */
+  #gene-nav { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  #gene-select-wrap { flex: 1; }
+  .nav-btn { padding: 5px 10px; border: 1px solid var(--border2); background: #fff; border-radius: 5px; cursor: pointer; color: var(--muted); font-size: 13px; line-height: 1; }
+  .nav-btn:hover:not(:disabled) { background: var(--bg); color: var(--text); }
+  .nav-btn:disabled { opacity: .4; cursor: not-allowed; }
+  #gene-counter { font-size: 11px; color: var(--muted2); white-space: nowrap; }
+
+  /* ── Plot ────────────────────────────────────────────────── */
+  .plot-placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted2); gap: 8px; padding: 20px; text-align: center; }
+  #plot-container { display: none; flex: 1; min-height: 0; position: relative; }
+  #plot-container canvas { max-height: 100%; }
+
+  /* ── Drug tag ────────────────────────────────────────────── */
+  .drug-tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: #ede9fe; color: #6d28d9; white-space: nowrap; }
+
+  /* ── Metrics panel ───────────────────────────────────────── */
+  .metrics-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--muted2); text-align: center; padding: 20px; }
+  .gene-header { padding: 9px 11px; border-radius: 6px; margin-bottom: 9px; }
+  .gene-header.up   { background: var(--up-light);   border-left: 3px solid var(--up); }
+  .gene-header.down { background: var(--down-light); border-left: 3px solid var(--down); }
+  .gene-header.none { background: var(--neutral-light); border-left: 3px solid var(--neutral); }
+  .gene-name { font-size: 14px; font-weight: 700; }
+  .gene-meta { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; word-break: break-word; }
+  .direction-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; margin-top: 5px; text-transform: uppercase; letter-spacing: .04em; }
+  .chip-up   { background: var(--up);   color: #fff; }
+  .chip-down { background: var(--down); color: #fff; }
+  .chip-none { background: #e5e7eb; color: var(--muted); }
+  .fit-badge { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 5px; font-size: 11.5px; font-weight: 500; }
+  .fit-ok   { background: #f0fdf4; color: var(--good); }
+  .fit-warn { background: #fffbeb; color: var(--warn); }
+  .metric-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-label { font-size: 11px; color: var(--muted); }
+  .metric-value { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .metric-value.good { color: var(--good); }
+  .metric-value.warn { color: var(--warn); }
+  .metric-value.bad  { color: var(--bad); }
+  .r2-bar  { height: 4px; border-radius: 2px; background: var(--border); margin-top: 3px; overflow: hidden; }
+  .r2-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+
+  /* ── Table ───────────────────────────────────────────────── */
+  .search-input { flex: 1; min-width: 220px; padding: 6px 9px; border: 1px solid var(--border2); border-radius: 5px; font-size: 12px; outline: none; color: var(--text); font-family: inherit; }
+  .search-input:focus { border-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { position: sticky; top: 0; background: #f8f9fa; padding: 7px 11px; font-weight: 600; font-size: 11px; color: var(--muted); text-align: left; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; }
+  thead th:hover { background: #eff0f2; color: var(--text); }
+  tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .07s; }
+  tbody tr:hover { background: #f0f4ff; }
+  tbody tr.selected { background: var(--down-light); }
+  tbody td { padding: 6px 11px; vertical-align: top; }
+  tbody td.gene-cell { font-weight: 600; }
+  .dir-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; }
+  .dir-up   { background: var(--up-light);   color: var(--up); }
+  .dir-down { background: var(--down-light); color: var(--down); }
+  .dir-none { background: var(--neutral-light); color: var(--neutral); }
+
+  /* ── Conditional visibility helpers ─────────────────────── */
+  .hidden { display: none !important; }
+
+  .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════ HEADER ═══════════════════════════ -->
+  <div id="header">
+    <h1>Protein Dose-Response Curve Generator</h1>
+    <p>Upload TMT reporter-intensity or LFQ proteomics data and fit 4-parameter dose-response curves.</p>
+  </div>
+
+  <!-- ══════════════════════ MAIN ═════════════════════════════ -->
+  <div id="main">
+
+    <!-- ─────────────────── LEFT PANEL ───────────────────── -->
+    <div id="left-panel" class="panel">
+
+      <!-- 1. Experiment type selector -->
+      <div>
+        <div class="section-title">Experiment type</div>
+        <div class="exp-switch" role="tablist">
+          <button class="exp-btn active" id="exp-tmt"  data-type="tmt" type="button">TMT</button>
+          <button class="exp-btn"        id="exp-lfq"  data-type="lfq" type="button">LFQ</button>
+        </div>
+        <span class="hint" id="exp-hint">
+          TMT: reporter-intensity columns mapped 1-to-1 with doses. One or more control channels.
+        </span>
+      </div>
+
+      <!-- 2. Protein data file (shared) -->
+      <div>
+        <div class="section-title">Protein data file</div>
+        <div id="protein-dropzone" class="dropzone"
+             onclick="document.getElementById('protein-input').click()"
+             ondragover="dzDragOver(event,'protein-dropzone')"
+             ondragleave="dzDragLeave('protein-dropzone')"
+             ondrop="dzDrop(event, 'protein')">
+          <strong>Drop data file or click</strong>
+          <span>proteinGroups.txt · combined_protein.tsv · XLSX · CSV</span>
+        </div>
+        <input id="protein-input" type="file" accept=".txt,.tsv,.csv,.xlsx,.xls" style="display:none"/>
+        <div id="protein-file-card-wrap" style="margin-top:7px;"></div>
+        <div id="header-preview" style="margin-top:7px;"></div>
+      </div>
+
+      <!-- 3. Format -->
+      <div class="form-row" style="margin-bottom:0;">
+        <label class="form-label" for="format-select">File format</label>
+        <select id="format-select" class="select-input">
+          <option value="maxquant">MaxQuant (proteinGroups / evidence)</option>
+          <option value="fragpipe">FragPipe (combined_protein)</option>
+          <option value="generic">Generic matrix</option>
+        </select>
+        <span class="hint">Only affects how multi-value gene/protein cells are split (`;` or `,` aliases).</span>
+      </div>
+
+      <!-- ─────────────── LFQ-only: mapping sheet ─────────────── -->
+      <div id="lfq-section" class="hidden">
+        <div class="section-title" style="margin-top:4px;">LFQ workflow</div>
+
+        <!-- Sub-mode tabs -->
+        <div class="submode-tabs">
+          <button class="submode-tab active" id="lfq-mode-mapping" data-mode="mapping" type="button">Use mapping sheet</button>
+          <button class="submode-tab" id="lfq-mode-manual" data-mode="manual" type="button">Manual</button>
+        </div>
+
+        <!-- LFQ + mapping sheet -->
+        <div id="lfq-mapping-pane">
+          <div id="mapping-dropzone" class="dropzone dropzone-sm"
+               onclick="document.getElementById('mapping-input').click()"
+               ondragover="dzDragOver(event,'mapping-dropzone')"
+               ondragleave="dzDragLeave('mapping-dropzone')"
+               ondrop="dzDrop(event, 'mapping')">
+            <strong>Drop mapping sheet (optional)</strong>
+            <span>XLSX with sample · drug · ID columns</span>
+          </div>
+          <input id="mapping-input" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none"/>
+          <div id="mapping-status" style="margin-top:6px;"></div>
+
+          <div class="form-row" style="margin-top:10px;">
+            <label class="form-label" for="drug-name-input">Drug name</label>
+            <input id="drug-name-input" class="text-input" type="text" placeholder="e.g. Methotrexate"/>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label class="form-label" for="drug-id-input">Drug ID <span style="font-weight:400;color:var(--muted2);">(auto)</span></label>
+              <input id="drug-id-input" class="text-input" type="text" placeholder="e.g. 71"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="plate-num-input">Plate # <span style="font-weight:400;color:var(--muted2);">(auto)</span></label>
+              <input id="plate-num-input" class="text-input" type="text" placeholder="e.g. 1"/>
+            </div>
+          </div>
+          <button id="lfq-autobuild-btn" class="btn btn-secondary btn-sm btn-full" type="button" style="margin-top:4px;">
+            Auto-build columns from drug + plate
+          </button>
+          <span class="hint">
+            Uses the standard DMSO/drug column-name patterns for MaxQuant or FragPipe LFQ output. You can still edit the columns below.
+          </span>
+        </div>
+
+        <!-- LFQ manual filters -->
+        <div id="lfq-manual-pane" class="hidden">
+          <div class="config-card">
+            <div class="form-row">
+              <label class="form-label" for="sample-col-select">Sample-name column</label>
+              <select id="sample-col-select" class="select-input"></select>
+              <span class="hint">Used when filtering by cell line / drug. Leave blank if your file only contains one combination.</span>
+            </div>
+            <div class="form-grid-2">
+              <div class="form-row">
+                <label class="form-label" for="cell-line-filter-input">Cell line contains</label>
+                <input id="cell-line-filter-input" class="text-input" type="text" placeholder="e.g. ASPC1"/>
+              </div>
+              <div class="form-row">
+                <label class="form-label" for="drug-filter-input">Drug contains</label>
+                <input id="drug-filter-input" class="text-input" type="text" placeholder="e.g. RMC-4630"/>
+              </div>
+            </div>
+          </div>
+          <span class="hint">Rows are kept only if the sample-name column contains both substrings (case-insensitive).</span>
+        </div>
+      </div>
+
+      <!-- ─────────── Shared: gene/protein columns ─────────── -->
+      <div>
+        <div class="section-title">Gene &amp; protein columns</div>
+        <div class="config-card">
+          <div class="form-row">
+            <label class="form-label" for="gene-col-select">Gene column</label>
+            <select id="gene-col-select" class="select-input"></select>
+          </div>
+          <div class="form-row" style="margin-bottom:0;">
+            <label class="form-label" for="protein-col-select">Protein column</label>
+            <select id="protein-col-select" class="select-input"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────── Shared: dose / column mapping ─────────── -->
+      <div>
+        <div class="section-title">Dose mapping</div>
+        <div class="config-card">
+          <label class="form-label">Control columns</label>
+          <div id="control-list"></div>
+          <button id="add-control-btn" class="btn btn-secondary btn-sm" type="button" style="margin:4px 0 0;">+ Add control column</button>
+          <span class="hint">Intensities from all listed control columns are averaged per row (NaN / zero skipped). TMT often uses one channel; LFQ usually has multiple DMSO replicates.</span>
+
+          <div style="margin-top:12px;">
+            <label class="form-label">Treatment columns</label>
+            <div id="treatment-list"></div>
+            <div class="mapping-actions">
+              <button id="add-treatment-btn" class="btn btn-secondary btn-sm" type="button">+ Add treatment</button>
+              <button id="autobuild-btn" class="btn btn-secondary btn-sm" type="button" title="Populate from intensity-like columns detected in the header">Auto-build from header</button>
+            </div>
+            <span class="small-muted">Each row = one intensity column mapped to a dose in nM.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─────────── Advanced settings ─────────── -->
+      <div>
+        <button class="accordion-toggle" id="adv-toggle" type="button">
+          <span id="acc-arrow">▸</span>
+          <span id="acc-label">Show advanced settings</span>
+        </button>
+        <div class="accordion-body" id="adv-settings">
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label class="form-label">Min R²</label>
+              <input id="s-minr2" class="text-input" type="number" value="0.8" step="0.05" min="0" max="1"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Min valid pts</label>
+              <input id="s-minpts" class="text-input" type="number" value="4" step="1" min="2"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label">FC up threshold</label>
+              <input id="s-fcup" class="text-input" type="number" value="1.5" step="0.1" min="1"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label">FC down threshold</label>
+              <input id="s-fcdn" class="text-input" type="number" value="0.7" step="0.1" min="0" max="1"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label">Min effect</label>
+              <input id="s-mineff" class="text-input" type="number" value="0.15" step="0.05"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label">DMSO reps / plate (LFQ)</label>
+              <input id="s-dmso" class="text-input" type="number" value="6" step="1" min="1"/>
+            </div>
+            <div class="form-row" style="grid-column:1/-1;">
+              <label class="form-label">Default doses for auto-build (nM)</label>
+              <input id="s-doses" class="text-input" type="text" value="1,10,100,1000,10000"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Run -->
+      <button id="run-btn" class="btn btn-primary btn-full" type="button">▶ Run analysis</button>
+      <div id="run-status"></div>
+    </div><!-- /left -->
+
+    <!-- ─────────────────── CENTER PANEL ───────────────────── -->
+    <div id="center-panel" class="panel" style="border-right:1px solid var(--border);">
+      <div id="center-top">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <div class="section-title" style="margin:0;">Curve navigation</div>
+          <span class="drug-tag" id="drug-tag" style="margin-left:auto;display:none;"></span>
+        </div>
+        <div id="gene-nav">
+          <div id="gene-select-wrap">
+            <select id="gene-select" class="select-input">
+              <option value="">— select gene —</option>
+            </select>
+          </div>
+          <button class="nav-btn" id="prev-btn" type="button" disabled title="Previous">‹</button>
+          <button class="nav-btn" id="next-btn" type="button" disabled title="Next">›</button>
+          <span id="gene-counter"></span>
+        </div>
+      </div>
+
+      <div id="plot-area">
+        <div id="plot-placeholder" class="plot-placeholder">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <rect x="4" y="4" width="40" height="40" rx="4" stroke="#9aa0ad" stroke-width="2"/>
+            <polyline points="8,36 16,20 24,24 32,14 40,10" stroke="#9aa0ad" stroke-width="2" fill="none" stroke-linecap="round"/>
+          </svg>
+          <p>Upload a file, map the columns, and run analysis.</p>
+        </div>
+        <div id="plot-container">
+          <canvas id="drc-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────────── RIGHT PANEL ───────────────────── -->
+    <div id="right-panel" class="panel">
+      <div>
+        <div class="section-title">Fit summary</div>
+        <p style="font-size:11px;color:var(--muted);">Parameters for the selected row.</p>
+      </div>
+      <div id="metrics-empty" class="metrics-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9aa0ad" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <p style="font-size:12px;">Select a fitted row to view<br/>curve statistics.</p>
+      </div>
+      <div id="metrics-content" class="hidden">
+        <div id="gene-header-card"></div>
+        <div id="fit-status-badge" class="fit-badge"></div>
+        <div style="margin-top:8px;">
+          <div class="metric-row"><span class="metric-label">EC50</span>          <span class="metric-value" id="m-ec50">—</span></div>
+          <div class="metric-row"><span class="metric-label">pEC50</span>         <span class="metric-value" id="m-pec50">—</span></div>
+          <div class="metric-row"><span class="metric-label">Hill slope</span>    <span class="metric-value" id="m-slope">—</span></div>
+          <div class="metric-row"><span class="metric-label">Top</span>           <span class="metric-value" id="m-top">—</span></div>
+          <div class="metric-row"><span class="metric-label">Bottom</span>        <span class="metric-value" id="m-bottom">—</span></div>
+          <div class="metric-row"><span class="metric-label">AUC</span>           <span class="metric-value" id="m-auc">—</span></div>
+          <div class="metric-row"><span class="metric-label">FC at max dose</span><span class="metric-value" id="m-fc">—</span></div>
+          <div class="metric-row" style="flex-direction:column;align-items:stretch;">
+            <div style="display:flex;justify-content:space-between;">
+              <span class="metric-label">R²</span>
+              <span class="metric-value" id="m-r2">—</span>
+            </div>
+            <div class="r2-bar"><div class="r2-fill" id="r2-bar-fill"></div></div>
+          </div>
+          <div class="metric-row"><span class="metric-label">Valid data points</span><span class="metric-value" id="m-npts">—</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- ══════════════════════ BOTTOM ═══════════════════════════ -->
+  <div id="bottom-panel">
+    <div id="bottom-header">
+      <strong style="font-size:12px;">Results</strong>
+      <span id="table-count" class="small-muted"></span>
+      <input id="table-search" class="search-input" type="text" placeholder="Search gene, protein, alias, or sample…"/>
+      <select id="filter-dir" class="select-input" style="width:150px;flex-shrink:0;">
+        <option value="all">All directions</option>
+        <option value="up">↑ Up-regulated</option>
+        <option value="down">↓ Down-regulated</option>
+        <option value="none">— Unregulated</option>
+      </select>
+      <button id="export-btn" class="btn btn-secondary btn-sm" type="button">⬇ Export CSV</button>
+    </div>
+    <div id="table-wrap">
+      <div id="table-empty" style="padding:28px;text-align:center;color:var(--muted2);font-size:12.5px;">
+        Run analysis to populate results.
+      </div>
+      <table id="results-table" style="display:none;">
+        <thead>
+          <tr>
+            <th data-col="gene">Gene</th>
+            <th data-col="protein_id">Protein</th>
+            <th data-col="sample_name" id="th-sample">Sample</th>
+            <th data-col="direction">Direction</th>
+            <th data-col="ec50_nM">EC50 (nM)</th>
+            <th data-col="pec50">pEC50</th>
+            <th data-col="slope">Hill slope</th>
+            <th data-col="r2">R²</th>
+            <th data-col="auc">AUC</th>
+            <th data-col="fc_max">FC max</th>
+            <th data-col="n_valid">N pts</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ══════════════════════ JAVASCRIPT ═══════════════════════ -->
+<script>
+'use strict';
+
+/* =============================================================
+ *  STATE
+ *  One object with:
+ *    - experimentType   : 'tmt' | 'lfq'
+ *    - lfqMode          : 'mapping' | 'manual'   (only meaningful when experimentType === 'lfq')
+ *    - proteinFile      : File
+ *    - proteinHeader    : string[] (column names)
+ *    - mappingFile      : File  (LFQ mapping sheet, optional)
+ *    - parsedMapping    : { rows, colSample, colDrug, colId } | null
+ *    - results / filtered / selectedIdx / sort / chart / analysisRan
+ * ============================================================ */
+const S = {
+  experimentType: 'tmt',
+  lfqMode:        'mapping',
+  proteinFile:    null,
+  proteinHeader:  [],
+  mappingFile:    null,
+  parsedMapping:  null,
+  results:        [],
+  filteredRows:   [],
+  sortCol:        'gene',
+  sortAsc:        true,
+  selectedIdx:    null,
+  chart:          null,
+  analysisRan:    false,
+};
+
+/* =============================================================
+ *  BASIC HELPERS
+ * ============================================================ */
+const r3 = v => Math.round(v * 1000)  / 1000;
+const r4 = v => Math.round(v * 10000) / 10000;
+
+function nanMean(values) {
+  const valid = values.filter(v => Number.isFinite(v));
+  return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : NaN;
+}
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function escapeRegex(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/* =============================================================
+ *  4PL / LL.4 FITTING  — unchanged from originals
+ *  f(x) = bottom + (top - bottom) / (1 + exp(slope * (ln(x) - ln(ec50))))
+ * ============================================================ */
+function ll4(x, slope, bottom, top, ec50) {
+  const safeEc50 = Math.max(ec50, 1e-12);
+  const logTerm = Math.min(Math.max(slope * (Math.log(x) - Math.log(safeEc50)), -700), 700);
+  return bottom + (top - bottom) / (1.0 + Math.exp(logTerm));
+}
+
+function nelderMead(costFn, x0, opts = {}) {
+  const n = x0.length;
+  const maxIter = opts.maxIter || 3000;
+  const tol     = opts.tol     || 1e-12;
+  const alpha = 1.0, gamma = 2.0, rho = 0.5, sigma = 0.5;
+
+  let simplex = [x0.slice()];
+  for (let i = 0; i < n; i++) {
+    const p = x0.slice();
+    p[i] = Math.abs(p[i]) > 1e-8 ? p[i] * 1.05 : 0.00025;
+    simplex.push(p);
+  }
+  let f = simplex.map(p => costFn(p));
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const ord = f.map((_, i) => i).sort((a, b) => f[a] - f[b]);
+    simplex = ord.map(i => simplex[i]);
+    f       = ord.map(i => f[i]);
+    if (f[n] - f[0] < tol) break;
+
+    const xo = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) xo[j] += simplex[i][j] / n;
+
+    const xr = xo.map((c, j) => c + alpha * (c - simplex[n][j]));
+    const fr = costFn(xr);
+    if (fr < f[0]) {
+      const xe = xo.map((c, j) => c + gamma * (xr[j] - c));
+      const fe = costFn(xe);
+      if (fe < fr) { simplex[n] = xe; f[n] = fe; } else { simplex[n] = xr; f[n] = fr; }
+    } else if (fr < f[n - 1]) {
+      simplex[n] = xr; f[n] = fr;
+    } else {
+      const xc = xo.map((c, j) => c + rho * (simplex[n][j] - c));
+      const fc = costFn(xc);
+      if (fc < f[n]) { simplex[n] = xc; f[n] = fc; }
+      else for (let i = 1; i <= n; i++) {
+        simplex[i] = simplex[0].map((x, j) => x + sigma * (simplex[i][j] - x));
+        f[i] = costFn(simplex[i]);
+      }
+    }
+  }
+  return { x: simplex[0], fval: f[0] };
+}
+
+function fitLL4(doses, responses, opts = {}) {
+  const doseMinGuard = opts.doseMinGuard ?? Math.min(...doses) * 0.1;
+  const doseMaxGuard = opts.doseMaxGuard ?? Math.max(...doses) * 10;
+  const minEffect    = opts.minEffect    ?? 0.15;
+  const minIdx = doses.indexOf(Math.min(...doses));
+  const maxIdx = doses.indexOf(Math.max(...doses));
+  const top0    = responses[minIdx];
+  const bottom0 = responses[maxIdx];
+  const ec50_0  = Math.sqrt(Math.min(...doses) * Math.max(...doses));
+  const slope0  = bottom0 < top0 ? -1 : 1;
+
+  const costFn = ([slope, bottom, top, ec50]) => {
+    if (!Number.isFinite(ec50) || ec50 <= 0) return 1e15;
+    let sse = 0;
+    for (let i = 0; i < doses.length; i++) {
+      const diff = responses[i] - ll4(doses[i], slope, bottom, top, ec50);
+      sse += diff * diff;
+    }
+    return Number.isFinite(sse) ? sse : 1e15;
+  };
+
+  let best = null, bestCost = Infinity;
+  for (const s0 of [slope0, -slope0]) {
+    try {
+      const res = nelderMead(costFn, [s0, bottom0, top0, ec50_0], { maxIter: 3000, tol: 1e-12 });
+      if (res.fval < bestCost) { bestCost = res.fval; best = res.x; }
+    } catch (_) { /* ignore */ }
+  }
+  if (!best) return { success: false, reason: 'optimization failed' };
+
+  const [slope, bottom, top, ec50] = best;
+  if (!Number.isFinite(ec50) || ec50 <= 0)          return { success: false, reason: `EC50 not finite (${ec50})` };
+  if (ec50 < doseMinGuard || ec50 > doseMaxGuard)   return { success: false, reason: `EC50 out of range (${r3(ec50)} nM)` };
+  if (Math.abs(top - bottom) < minEffect)           return { success: false, reason: `flat curve |Δ|=${Math.abs(top-bottom).toFixed(3)}` };
+  return { success: true, params: { slope, bottom, top, ec50 } };
+}
+
+function computeAUC(slope, bottom, top, ec50, logMin, logMax, n = 200) {
+  let prev = ll4(Math.pow(10, logMin), slope, bottom, top, ec50);
+  let auc = 0;
+  const step = (logMax - logMin) / (n - 1);
+  for (let i = 1; i < n; i++) {
+    const cur = ll4(Math.pow(10, logMin + i * step), slope, bottom, top, ec50);
+    auc += (prev + cur) * 0.5 * step;
+    prev = cur;
+  }
+  const span = logMax - logMin;
+  return Number.isFinite(auc) && span > 0 ? auc / span : NaN;
+}
+
+/* =============================================================
+ *  SETTINGS  (from the advanced accordion)
+ * ============================================================ */
+function getSettings() {
+  const doses = document.getElementById('s-doses').value
+    .split(',').map(s => parseFloat(s.trim())).filter(Number.isFinite);
+  return {
+    defaultDoses: doses,
+    dmsoPerPlate: parseInt(document.getElementById('s-dmso').value, 10)  || 6,
+    minR2:        parseFloat(document.getElementById('s-minr2').value)   || 0.8,
+    minValidPts:  parseInt(document.getElementById('s-minpts').value, 10)|| 4,
+    fcUp:         parseFloat(document.getElementById('s-fcup').value)    || 1.5,
+    fcDown:       parseFloat(document.getElementById('s-fcdn').value)    || 0.7,
+    minEffect:    parseFloat(document.getElementById('s-mineff').value)  || 0.15,
+  };
+}
+
+/* =============================================================
+ *  HEADER INSPECTION  — guess columns from the raw header
+ * ============================================================ */
+function splitAliases(value, format) {
+  const text = String(value ?? '').trim();
+  if (!text || /^(null|undefined|nan)$/i.test(text)) return [];
+  // MaxQuant tends to use `;` but `,` appears too; treat them both as separators.
+  return [...new Set(text.split(/[;,]/).map(s => s.trim()).filter(Boolean))];
+}
+function sortNumericSuffix(names) {
+  return [...names].sort((a, b) => {
+    const mA = String(a).match(/(\d+)\s*$/), mB = String(b).match(/(\d+)\s*$/);
+    const nA = mA ? parseInt(mA[1], 10) : Number.MAX_SAFE_INTEGER;
+    const nB = mB ? parseInt(mB[1], 10) : Number.MAX_SAFE_INTEGER;
+    return nA !== nB ? nA - nB : String(a).localeCompare(String(b));
+  });
+}
+function guessColumn(header, candidates) {
+  const low = header.map(h => String(h).toLowerCase());
+  for (const c of candidates) {
+    const i = low.indexOf(c.toLowerCase());
+    if (i >= 0) return header[i];
+  }
+  return '';
+}
+function guessIntensityColumns(header) {
+  // TMT-style reporter channels first, since they are usually exhaustive / exclusive.
+  const repCorr = header.filter(n => /^Reporter intensity corrected \d+$/i.test(n));
+  if (repCorr.length) return sortNumericSuffix(repCorr);
+  const rep = header.filter(n => /^Reporter intensity \d+$/i.test(n));
+  if (rep.length) return sortNumericSuffix(rep);
+  // Fallback: any LFQ / MaxLFQ / Intensity column that is not a `count` column.
+  return header.filter(n => /(LFQ Intensity|MaxLFQ Intensity|Razor Intensity|^Intensity)/i.test(n)
+                           && !/count/i.test(n));
+}
+
+/* =============================================================
+ *  FILE I/O
+ * ============================================================ */
+function dzDragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('drag-over'); }
+function dzDragLeave(id)   { document.getElementById(id).classList.remove('drag-over'); }
+function dzDrop(e, kind) {
+  e.preventDefault();
+  const id = kind === 'protein' ? 'protein-dropzone' : 'mapping-dropzone';
+  document.getElementById(id).classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  if (kind === 'protein') handleProteinFile(file);
+  else                    handleMappingFile(file);
+}
+
+async function readHeaderOnly(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'xlsx' || ext === 'xls') {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, blankrows: false });
+          if (!rows.length) throw new Error('Workbook is empty');
+          resolve(rows[0].map(h => h ? String(h).trim() : ''));
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  // For large text files, read only the first ~1 MB to find the header line.
+  const preview  = await file.slice(0, 1024 * 1024).text();
+  const firstLine = preview.split(/\r?\n/).find(l => l.trim().length > 0);
+  if (!firstLine) throw new Error('The file appears empty');
+  const sep = firstLine.includes('\t') ? '\t' : ',';
+  return firstLine.split(sep).map(h => h ? String(h).trim() : '');
+}
+
+async function parseMatrixFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  if (ext === 'xlsx' || ext === 'xls') {
+    rows = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: false, blankrows: false }));
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  } else {
+    const text = await file.text();
+    const firstLine = text.split(/\r?\n/).find(l => l.trim().length > 0);
+    if (!firstLine) throw new Error('The file appears empty');
+    const sep = firstLine.includes('\t') ? '\t' : ',';
+    rows = text.split(/\r?\n/).filter(l => l.trim().length > 0).map(l => l.split(sep));
+  }
+  if (!rows || rows.length < 2) throw new Error('The file must have a header row and at least one data row');
+  const header = rows[0].map(h => h ? String(h).trim() : '');
+  return { header, dataRows: rows.slice(1) };
+}
+
+/* =============================================================
+ *  EXPERIMENT-TYPE SWITCH
+ *  Shows / hides the LFQ-specific panel and reconfigures the
+ *  table columns (the "Sample" column only makes sense when the
+ *  user may be mixing cell lines/drugs in one file).
+ * ============================================================ */
+function setExperimentType(type) {
+  S.experimentType = type;
+  document.getElementById('exp-tmt').classList.toggle('active', type === 'tmt');
+  document.getElementById('exp-lfq').classList.toggle('active', type === 'lfq');
+  document.getElementById('lfq-section').classList.toggle('hidden', type !== 'lfq');
+  document.getElementById('th-sample').classList.toggle('hidden', type !== 'lfq' || S.lfqMode !== 'manual');
+  document.getElementById('exp-hint').textContent = type === 'tmt'
+    ? 'TMT: reporter-intensity columns mapped 1-to-1 with doses. One or more control channels.'
+    : 'LFQ: pick a mapping sheet to auto-fill the columns, or go fully manual (useful for files with multiple cell-line / drug combos).';
+}
+
+function setLfqMode(mode) {
+  S.lfqMode = mode;
+  document.getElementById('lfq-mode-mapping').classList.toggle('active', mode === 'mapping');
+  document.getElementById('lfq-mode-manual' ).classList.toggle('active', mode === 'manual');
+  document.getElementById('lfq-mapping-pane').classList.toggle('hidden', mode !== 'mapping');
+  document.getElementById('lfq-manual-pane' ).classList.toggle('hidden', mode !== 'manual');
+  document.getElementById('th-sample').classList.toggle('hidden', !(S.experimentType === 'lfq' && mode === 'manual'));
+}
+
+/* =============================================================
+ *  PROTEIN FILE HANDLER
+ *  Parse the header only so we can populate the column selectors
+ *  without loading giant files into memory twice.
+ * ============================================================ */
+function handleProteinFile(file) {
+  if (!file) return;
+  S.proteinFile    = file;
+  S.proteinHeader  = [];
+  S.analysisRan    = false;
+  S.results        = [];
+  S.filteredRows   = [];
+  S.selectedIdx    = null;
+  if (S.chart) { S.chart.destroy(); S.chart = null; }
+
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+  const card = document.getElementById('protein-file-card-wrap');
+  card.innerHTML = `
+    <div class="file-card">
+      <div>
+        <div class="fc-name">${escapeHtml(file.name)}</div>
+        <div class="fc-meta">${sizeMb} MB</div>
+      </div>
+      <button type="button" class="fc-remove" title="Remove" onclick="clearProteinFile()">✕</button>
+    </div>`;
+
+  // Nudge format: combined_protein => FragPipe; proteinGroups/evidence => MaxQuant.
+  if (/combined_protein/i.test(file.name))                        document.getElementById('format-select').value = 'fragpipe';
+  else if (/protein.*groups|proteinGroups|evidence/i.test(file.name)) document.getElementById('format-select').value = 'maxquant';
+
+  setStatus('header-preview', 'info', '⟳ Reading header…');
+  readHeaderOnly(file)
+    .then(header => {
+      S.proteinHeader = header;
+      populateColumnSelects(header);
+      const preview = header.slice(0, 6).join(' | ');
+      setStatus('header-preview', 'ok',
+        `✓ ${header.length} columns. <span class="small-muted">${escapeHtml(preview)}${header.length>6?' | …':''}</span>`);
+    })
+    .catch(err => {
+      S.proteinHeader = [];
+      setStatus('header-preview', 'error', '✕ ' + escapeHtml(err.message));
+    });
+}
+
+function clearProteinFile() {
+  S.proteinFile = null;
+  S.proteinHeader = [];
+  document.getElementById('protein-file-card-wrap').innerHTML = '';
+  document.getElementById('protein-input').value = '';
+  setStatus('header-preview', '', '');
+  populateColumnSelects([]);
+}
+
+/* =============================================================
+ *  MAPPING SHEET HANDLER  (LFQ only, optional)
+ *  Expected shape: first column = sample name, and somewhere a
+ *  "drug" + "id" column. We keep the resolver from the original
+ *  curated interface: it scans the sample column for the
+ *  "Plate{N}_{DrugName}_{rep}" pattern.
+ * ============================================================ */
+function handleMappingFile(file) {
+  if (!file) return;
+  S.mappingFile   = file;
+  S.parsedMapping = null;
+  setStatus('mapping-status', 'info', `⟳ Parsing ${escapeHtml(file.name)}…`);
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data  = new Uint8Array(e.target.result);
+      const wb    = XLSX.read(data, { type: 'array' });
+      const ws    = wb.Sheets[wb.SheetNames[0]];
+      const rows  = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      if (!rows.length) throw new Error('Mapping sheet is empty');
+
+      const rawHeader = rows[0];
+      const header    = rawHeader.map(c => c ? String(c).trim().toLowerCase() : '');
+      const colSample = 0;
+      const colDrug   = header.indexOf('drug');
+      const colId     = header.indexOf('id');
+      if (colDrug < 0) throw new Error('"drug" column not found in mapping sheet.');
+      if (colId   < 0) throw new Error('"id" column not found in mapping sheet.');
+
+      S.parsedMapping = { rows: rows.slice(1), colSample, colDrug, colId };
+      setStatus('mapping-status', 'ok', `✓ Loaded — ${rows.length - 1} rows. You can still override the drug ID and plate below.`);
+      tryAutoFillDrug();
+    } catch (err) {
+      setStatus('mapping-status', 'error', '✕ ' + escapeHtml(err.message));
+    }
+  };
+  reader.onerror = () => setStatus('mapping-status', 'error', '✕ Could not read file');
+  reader.readAsArrayBuffer(file);
+}
+
+// Resolve drug name → { drugId, plateNum } via the mapping sheet.
+function resolveDrugFromMapping(drugName) {
+  if (!S.parsedMapping) return null;
+  const { rows, colSample, colDrug, colId } = S.parsedMapping;
+  const lower = drugName.trim().toLowerCase();
+
+  let drugId = null;
+  for (const row of rows) {
+    const d = row[colDrug];
+    if (d && String(d).trim().toLowerCase() === lower) {
+      const raw = row[colId];
+      if (raw != null) drugId = String(typeof raw === 'number' ? Math.round(raw) : raw);
+      break;
+    }
+  }
+  if (!drugId) return null;
+
+  // Plate number is embedded in the sample column as `Plate{N}_{DrugName}_{rep}`.
+  const pat = new RegExp(`^plate(\\d+)_${escapeRegex(drugName.trim())}_\\d`, 'i');
+  const plates = [];
+  for (const row of rows) {
+    const s = row[colSample] ? String(row[colSample]).trim() : '';
+    const m = s.match(pat);
+    if (m) plates.push(parseInt(m[1], 10));
+  }
+  if (!plates.length) return null;
+  return { drugId, plateNum: [...new Set(plates)].sort((a, b) => a - b)[0] };
+}
+
+function tryAutoFillDrug() {
+  const drugName = document.getElementById('drug-name-input').value.trim();
+  if (!drugName || !S.parsedMapping) return;
+  const res = resolveDrugFromMapping(drugName);
+  const idI    = document.getElementById('drug-id-input');
+  const plateI = document.getElementById('plate-num-input');
+  if (!res) {
+    idI.classList.remove('auto-filled');
+    plateI.classList.remove('auto-filled');
+    setStatus('mapping-status', 'warn', `⚠ Drug "${escapeHtml(drugName)}" not found in mapping sheet. Fill the ID / plate manually.`);
+    return;
+  }
+  idI.value    = res.drugId;
+  plateI.value = res.plateNum;
+  idI.classList.add('auto-filled');
+  plateI.classList.add('auto-filled');
+  setStatus('mapping-status', 'ok', `✓ ${escapeHtml(drugName)} → ID ${res.drugId}, Plate ${res.plateNum}`);
+}
+
+/* =============================================================
+ *  COLUMN SELECTORS
+ *  Populate the gene / protein / sample column dropdowns from
+ *  the parsed header.
+ * ============================================================ */
+function setSelectOptions(selectId, header, opts = {}) {
+  const sel  = document.getElementById(selectId);
+  const blank = opts.blankLabel ?? 'Select a column';
+  const include = opts.includeBlank ?? true;
+  const current = sel.value;
+  const pieces = include ? [`<option value="">${escapeHtml(blank)}</option>`] : [];
+  header.forEach(n => pieces.push(`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`));
+  sel.innerHTML = pieces.join('');
+  if (current && header.includes(current))          sel.value = current;
+  else if (opts.defaultValue && header.includes(opts.defaultValue)) sel.value = opts.defaultValue;
+}
+
+function populateColumnSelects(header) {
+  const geneGuess    = guessColumn(header, ['Gene Names', 'Gene names', 'Genes', 'Gene']);
+  const proteinGuess = guessColumn(header, ['Protein Names', 'Protein IDs', 'Protein ID', 'Proteins', 'Leading proteins']);
+  const sampleGuess  = guessColumn(header, ['Experiment', 'Sample', 'Raw file']);
+  setSelectOptions('gene-col-select',    header, { defaultValue: geneGuess });
+  setSelectOptions('protein-col-select', header, { defaultValue: proteinGuess });
+  setSelectOptions('sample-col-select',  header, { defaultValue: sampleGuess, blankLabel: 'No sample-name column' });
+  // Also rebuild any control / treatment rows so their dropdowns use the new header.
+  rebuildMappingRowsAfterHeaderChange();
+}
+
+function headerOptionsHtml(selectedValue = '') {
+  if (!S.proteinHeader.length) return '';
+  return S.proteinHeader.map(n =>
+    `<option value="${escapeHtml(n)}"${n === selectedValue ? ' selected' : ''}>${escapeHtml(n)}</option>`
+  ).join('');
+}
+
+function rebuildMappingRowsAfterHeaderChange() {
+  // Preserve whatever user had selected; reset selects that no longer exist.
+  document.querySelectorAll('#control-list .control-select, #treatment-list .treatment-col-select')
+    .forEach(sel => {
+      const prev = sel.value;
+      sel.innerHTML = `<option value="">Select a column</option>${headerOptionsHtml(prev)}`;
+      if (!S.proteinHeader.includes(prev)) sel.value = '';
+    });
+  updateEmptyStates();
+}
+
+/* =============================================================
+ *  CONTROL + TREATMENT MAPPING ROWS
+ *  Same pattern for both. Each control row is a single select;
+ *  each treatment row adds a dose number next to it.
+ * ============================================================ */
+function addControlRow(columnName = '') {
+  const list = document.getElementById('control-list');
+  const row = document.createElement('div');
+  row.className = 'mapping-row control-row';
+  row.innerHTML = `
+    <select class="select-input control-select">
+      <option value="">Select a column</option>
+      ${headerOptionsHtml(columnName)}
+    </select>
+    <button type="button" class="mapping-remove" title="Remove">✕</button>`;
+  row.querySelector('.mapping-remove').addEventListener('click', () => { row.remove(); updateEmptyStates(); });
+  list.appendChild(row);
+  updateEmptyStates();
+}
+
+function addTreatmentRow(columnName = '', doseValue = '') {
+  const list = document.getElementById('treatment-list');
+  const row = document.createElement('div');
+  row.className = 'mapping-row';
+  row.innerHTML = `
+    <select class="select-input treatment-col-select">
+      <option value="">Select a column</option>
+      ${headerOptionsHtml(columnName)}
+    </select>
+    <input class="text-input treatment-dose-input" type="number" step="any" min="0"
+           value="${escapeHtml(doseValue)}" placeholder="Dose (nM)"/>
+    <button type="button" class="mapping-remove" title="Remove">✕</button>`;
+  row.querySelector('.mapping-remove').addEventListener('click', () => { row.remove(); updateEmptyStates(); });
+  list.appendChild(row);
+  updateEmptyStates();
+}
+
+function clearControlRows()   { document.getElementById('control-list').innerHTML = ''; updateEmptyStates(); }
+function clearTreatmentRows() { document.getElementById('treatment-list').innerHTML = ''; updateEmptyStates(); }
+
+function updateEmptyStates() {
+  const cl = document.getElementById('control-list');
+  const tl = document.getElementById('treatment-list');
+  cl.querySelectorAll('.mapping-empty').forEach(n => n.remove());
+  tl.querySelectorAll('.mapping-empty').forEach(n => n.remove());
+  if (!cl.children.length) cl.innerHTML = '<div class="mapping-empty">No control columns added.</div>';
+  if (!tl.children.length) tl.innerHTML = '<div class="mapping-empty">No treatment columns added.</div>';
+}
+
+/* =============================================================
+ *  AUTO-BUILD HELPERS
+ *  Two entry points:
+ *    autoBuildGeneric()  — scans the header for intensity columns
+ *                          and uses the first one as the sole
+ *                          control. Used in TMT mode and LFQ
+ *                          manual mode.
+ *    autoBuildLfqFromMapping() — uses the standard MaxQuant /
+ *                          FragPipe LFQ naming conventions with
+ *                          the drug ID + plate number the user
+ *                          picked (or that came from the mapping
+ *                          sheet).
+ * ============================================================ */
+function autoBuildGeneric() {
+  if (!S.proteinHeader.length) { setRunStatus('warn', 'Upload a data file first.'); return; }
+  const intensityCols = guessIntensityColumns(S.proteinHeader);
+  if (!intensityCols.length) { setRunStatus('warn', 'No intensity-like columns found in header.'); return; }
+  const { defaultDoses } = getSettings();
+  clearControlRows();
+  clearTreatmentRows();
+  addControlRow(intensityCols[0]);
+  intensityCols.slice(1).forEach((col, i) => addTreatmentRow(col, defaultDoses[i] ?? ''));
+  setRunStatus('info', `Populated 1 control + ${intensityCols.length - 1} treatment columns. Verify doses in nM.`);
+}
+
+function autoBuildLfqFromMapping() {
+  if (!S.proteinHeader.length) { setRunStatus('warn', 'Upload a data file first.'); return; }
+  const drugName = document.getElementById('drug-name-input').value.trim();
+  const drugId   = document.getElementById('drug-id-input').value.trim();
+  const plateStr = document.getElementById('plate-num-input').value.trim();
+  const plateNum = parseInt(plateStr, 10);
+  const fmt      = document.getElementById('format-select').value;
+  const { defaultDoses, dmsoPerPlate } = getSettings();
+
+  if (!drugName) { setRunStatus('warn', 'Enter a drug name (used to build FragPipe column prefixes).'); return; }
+  if (!drugId)   { setRunStatus('warn', 'Drug ID is missing. Use the mapping sheet or type it manually.'); return; }
+  if (!Number.isFinite(plateNum)) { setRunStatus('warn', 'Plate number is missing or not a number.'); return; }
+  if (!defaultDoses.length) { setRunStatus('warn', 'Advanced settings → doses is empty.'); return; }
+
+  let dmsoColNames, treatColNames;
+  if (fmt === 'maxquant') {
+    // MaxQuant LFQ convention: "LFQ Intensity DMSO{N}" spans the whole plate, and treatment
+    // columns are named "LFQ Intensity {DrugID} {dose}".
+    const dmsoStart = (plateNum - 1) * dmsoPerPlate + 1;
+    const dmsoEnd   = plateNum * dmsoPerPlate;
+    dmsoColNames  = [];
+    for (let i = dmsoStart; i <= dmsoEnd; i++) dmsoColNames.push(`LFQ Intensity DMSO${i}`);
+    treatColNames = defaultDoses.map(d => `LFQ Intensity ${drugId} ${d}`);
+  } else if (fmt === 'fragpipe') {
+    // FragPipe MaxLFQ convention: "DMSO_{plate}_{rep} MaxLFQ Intensity" and "{drug}_{dose} MaxLFQ Intensity".
+    dmsoColNames = [];
+    for (let r = 1; r <= dmsoPerPlate; r++) dmsoColNames.push(`DMSO_${plateNum}_${r} MaxLFQ Intensity`);
+    const dl = drugName.toLowerCase();
+    treatColNames = defaultDoses.map(d => `${dl}_${d} MaxLFQ Intensity`);
+  } else {
+    setRunStatus('warn', 'Auto-build from drug+plate needs MaxQuant or FragPipe format. Use "Auto-build from header" instead.');
+    return;
+  }
+
+  // Warn about columns that are missing from the header, but still fill the rows so user can edit.
+  const missing = [...dmsoColNames, ...treatColNames].filter(n => !S.proteinHeader.includes(n));
+
+  clearControlRows();
+  clearTreatmentRows();
+  dmsoColNames .forEach(c  => addControlRow(c));
+  treatColNames.forEach((c, i) => addTreatmentRow(c, defaultDoses[i]));
+
+  if (missing.length) {
+    setRunStatus('warn',
+      `Built ${dmsoColNames.length} control + ${treatColNames.length} treatment rows, but ${missing.length} of them are not in the header. Fix them manually.`);
+  } else {
+    setRunStatus('ok', `Built ${dmsoColNames.length} control + ${treatColNames.length} treatment rows.`);
+  }
+}
+
+/* =============================================================
+ *  CONFIG GATHERING
+ *  Single AnalysisConfig shape used by the pipeline regardless
+ *  of experiment type.
+ * ============================================================ */
+function gatherConfig() {
+  const format         = document.getElementById('format-select').value;
+  const geneColumn     = document.getElementById('gene-col-select').value;
+  const proteinColumn  = document.getElementById('protein-col-select').value;
+
+  // Sample column + filters are only meaningful in LFQ-manual mode.
+  const useSampleFilter = (S.experimentType === 'lfq' && S.lfqMode === 'manual');
+  const sampleColumn   = useSampleFilter ? document.getElementById('sample-col-select').value : '';
+  const cellLineFilter = useSampleFilter ? document.getElementById('cell-line-filter-input').value.trim() : '';
+  const drugFilter     = useSampleFilter ? document.getElementById('drug-filter-input').value.trim()     : '';
+
+  const controlColumns = [...document.querySelectorAll('#control-list .control-select')]
+    .map(sel => sel.value).filter(Boolean);
+
+  const treatments = [...document.querySelectorAll('#treatment-list .mapping-row')]
+    .map(r => ({
+      column: r.querySelector('.treatment-col-select').value,
+      dose:   parseFloat(r.querySelector('.treatment-dose-input').value)
+    }))
+    .filter(t => t.column && Number.isFinite(t.dose) && t.dose > 0);
+
+  if (!geneColumn)          throw new Error('Select a gene column.');
+  if (!proteinColumn)       throw new Error('Select a protein column.');
+  if (!controlColumns.length) throw new Error('Add at least one control column.');
+  if (!treatments.length)   throw new Error('Add at least one treatment column with a positive dose.');
+  if (useSampleFilter && (cellLineFilter || drugFilter) && !sampleColumn)
+    throw new Error('Choose a sample-name column if you want to filter by cell line or drug text.');
+
+  // No duplicates across control + treatment columns.
+  const seen = new Set();
+  const dups = [];
+  for (const c of controlColumns) { if (seen.has(c)) dups.push(c); seen.add(c); }
+  for (const t of treatments)     { if (seen.has(t.column)) dups.push(t.column); seen.add(t.column); }
+  if (dups.length) throw new Error(`Column "${dups[0]}" is used more than once.`);
+
+  return {
+    experimentType: S.experimentType,
+    format,
+    geneColumn, proteinColumn, sampleColumn,
+    controlColumns,
+    treatments: treatments.sort((a, b) => a.dose - b.dose),
+    cellLineFilter, drugFilter,
+    drugName: (S.experimentType === 'lfq' && S.lfqMode === 'mapping')
+                ? document.getElementById('drug-name-input').value.trim()
+                : '',
+  };
+}
+
+/* =============================================================
+ *  UNIFIED PIPELINE
+ *  Independent of experiment type. It consumes:
+ *    - header / dataRows from the parsed file
+ *    - an AnalysisConfig (geneColumn, proteinColumn, sampleColumn?,
+ *      controlColumns[], treatments[{column,dose}], optional filters)
+ *    - fit settings (min R², min pts, thresholds, min effect)
+ *  and produces the same result rows as before.
+ * ============================================================ */
+function runPipeline(parsed, config, settings) {
+  const { header, dataRows } = parsed;
+  const idx = new Map(header.map((n, i) => [n, i]));
+  const missing = [];
+  const needCols = [
+    config.geneColumn, config.proteinColumn,
+    ...(config.sampleColumn ? [config.sampleColumn] : []),
+    ...config.controlColumns,
+    ...config.treatments.map(t => t.column),
+  ];
+  for (const n of needCols) if (!idx.has(n)) missing.push(n);
+  if (missing.length) {
+    throw new Error(
+      `These columns were not found in the file:\n${missing.slice(0, 5).join('\n')}` +
+      (missing.length > 5 ? `\n…and ${missing.length - 5} more` : '')
+    );
+  }
+
+  const geneCol    = idx.get(config.geneColumn);
+  const protCol    = idx.get(config.proteinColumn);
+  const sampleCol  = config.sampleColumn ? idx.get(config.sampleColumn) : -1;
+  const controlCols = config.controlColumns.map(c => idx.get(c));
+  const treatCols   = config.treatments.map(t => ({ col: idx.get(t.column), dose: t.dose, name: t.column }));
+
+  const dosesNm = treatCols.map(t => t.dose);
+  const doseMinGuard = Math.min(...dosesNm) * 0.1;
+  const doseMaxGuard = Math.max(...dosesNm) * 10;
+
+  // TMT-style matrices often have one row per protein already, but LFQ files can
+  // have duplicates. Keep the row with the most valid intensities per gene.
+  const geneMap = new Map();   // gene → { row, nValid, rowIndex }
+  const cellLineLower = config.cellLineFilter.toLowerCase();
+  const drugLower     = config.drugFilter.toLowerCase();
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i];
+
+    // Optional sample-name substring filter (LFQ manual path).
+    if (sampleCol >= 0) {
+      const s = String(row[sampleCol] ?? '').toLowerCase();
+      if (cellLineLower && !s.includes(cellLineLower)) continue;
+      if (drugLower     && !s.includes(drugLower))     continue;
+    }
+
+    const rawGene = String(row[geneCol] ?? '').split(/[;,]/)[0].trim();
+    if (!rawGene || /^(nan|null|undefined)$/i.test(rawGene)) continue;
+
+    const allCols = [...controlCols, ...treatCols.map(t => t.col)];
+    const nValid  = allCols.filter(ci => {
+      const v = parseFloat(row[ci]);
+      return Number.isFinite(v) && v > 0;
+    }).length;
+
+    if (!geneMap.has(rawGene) || nValid > geneMap.get(rawGene).nValid) {
+      geneMap.set(rawGene, { row, nValid, rowIndex: i });
+    }
+  }
+
+  const results = [];
+
+  for (const [gene, { row, rowIndex }] of geneMap) {
+    // Protein + alias text for table search.
+    const proteinAliases = splitAliases(row[protCol], config.format);
+    const geneAliases    = splitAliases(row[geneCol], config.format);
+    const primaryProtein = proteinAliases[0] || '';
+
+    // Control mean: positive finite values only (zeros treated as missing, mirrors Python).
+    const ctrlVals = controlCols.map(ci => {
+      const v = parseFloat(row[ci]);
+      return Number.isFinite(v) && v > 0 ? v : NaN;
+    });
+    const ctrlMean = nanMean(ctrlVals);
+    if (!Number.isFinite(ctrlMean) || ctrlMean <= 0) continue;
+
+    // Relative intensity per treatment column.
+    const relVals = treatCols.map(t => {
+      const v = parseFloat(row[t.col]);
+      return Number.isFinite(v) && v > 0 ? v / ctrlMean : NaN;
+    });
+    const validMask   = relVals.map(v => Number.isFinite(v));
+    const nValidResp  = validMask.filter(Boolean).length;
+    if (nValidResp < settings.minValidPts) continue;
+
+    const validDoses = treatCols.map(t => t.dose).filter((_, i) => validMask[i]);
+    const validResp  = relVals.filter(v => Number.isFinite(v));
+
+    const fit = fitLL4(validDoses, validResp, { doseMinGuard, doseMaxGuard, minEffect: settings.minEffect });
+    if (!fit.success) continue;
+
+    const { slope, bottom, top, ec50 } = fit.params;
+    const fitted = validDoses.map(d => ll4(d, slope, bottom, top, ec50));
+    const meanR  = validResp.reduce((a, b) => a + b, 0) / validResp.length;
+    const ssRes  = validResp.reduce((s, v, i) => s + (v - fitted[i]) ** 2, 0);
+    const ssTot  = validResp.reduce((s, v)    => s + (v - meanR) ** 2, 0);
+    const r2     = ssTot > 0 ? 1 - ssRes / ssTot : NaN;
+    if (!Number.isFinite(r2) || r2 < settings.minR2) continue;
+
+    const fcMax  = ll4(Math.max(...dosesNm), slope, bottom, top, ec50);
+    const isUp   = fcMax > settings.fcUp;
+    const isDown = fcMax < settings.fcDown;
+    const pec50  = 9.0 - Math.log10(ec50);
+    const auc    = computeAUC(slope, bottom, top, ec50,
+                              Math.log10(Math.min(...dosesNm)),
+                              Math.log10(Math.max(...dosesNm)));
+
+    const sampleText = sampleCol >= 0 ? String(row[sampleCol] ?? '').trim() : '';
+
+    results.push({
+      row_index: rowIndex,
+      gene,
+      protein_id: primaryProtein,
+      sample_name: sampleText,
+      gene_aliases: geneAliases.join('; '),
+      protein_aliases: proteinAliases.join('; '),
+      search_text: [gene, ...geneAliases, ...proteinAliases, sampleText].join(' ').toLowerCase(),
+      ec50_nM: r3(ec50),
+      pec50:   r3(pec50),
+      slope:   r3(slope),
+      top:     r3(top),
+      bottom:  r3(bottom),
+      r2:      r4(r2),
+      auc:     r4(auc),
+      fc_max:  r3(fcMax),
+      direction: isUp ? 'up' : isDown ? 'down' : 'none',
+      regulated: isUp || isDown,
+      n_valid:   nValidResp,
+      rel_intensities: relVals.map(v => Number.isFinite(v) ? r4(v) : null),
+      doses_nm: dosesNm.slice(),
+    });
+  }
+
+  return results;
+}
+
+/* =============================================================
+ *  RUN ORCHESTRATOR
+ * ============================================================ */
+async function runAnalysis() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  setRunStatus('', '');
+
+  try {
+    if (!S.proteinFile) throw new Error('Upload a protein data file first.');
+    const config   = gatherConfig();
+    const settings = getSettings();
+
+    setRunStatus('info', '⟳ Parsing data file…');
+    const parsed = await parseMatrixFile(S.proteinFile);
+    // Yield to the browser so the "Parsing…" message paints before fitting blocks the thread.
+    await new Promise(r => setTimeout(r, 20));
+
+    setRunStatus('info', `⟳ Fitting LL.4 curves… (${parsed.dataRows.length} rows)`);
+    const results = runPipeline(parsed, config, settings);
+    if (!results.length) throw new Error('No rows passed the current filters and fit thresholds.');
+
+    loadResults(results, config);
+    const up   = results.filter(r => r.direction === 'up').length;
+    const down = results.filter(r => r.direction === 'down').length;
+    setRunStatus('ok', `✓ ${results.length} proteins fitted  (↑${up} · ↓${down})`);
+
+  } catch (err) {
+    console.error(err);
+    setRunStatus('error', '✕ ' + (err.message || String(err)));
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '▶ Run analysis';
+}
+
+function loadResults(results, config) {
+  S.results      = results;
+  S.analysisRan  = true;
+  S.selectedIdx  = null;
+  S.filteredRows = [];
+
+  // Drug tag above the plot: show drug name in LFQ mapping mode if provided.
+  const tag = document.getElementById('drug-tag');
+  if (config.drugName) { tag.textContent = config.drugName; tag.style.display = ''; }
+  else                 { tag.style.display = 'none'; }
+
+  populateGeneSelect();
+  filterTable();
+  if (results.length) selectGeneByIndex(0);
+}
+
+/* =============================================================
+ *  PLOT / METRICS / TABLE  — largely unchanged from before.
+ * ============================================================ */
+function renderPlot(row) {
+  document.getElementById('plot-placeholder').style.display = 'none';
+  document.getElementById('plot-container').style.display   = 'flex';
+  if (S.chart) { S.chart.destroy(); S.chart = null; }
+
+  const dosesNm   = row.doses_nm;
+  const logDoses  = dosesNm.map(d => Math.log10(d));
+  const logMin    = logDoses[0] - 0.3;
+  const logMax    = logDoses[logDoses.length - 1] + 0.3;
+
+  const curveCol = row.direction === 'up' ? '#dc2626' : row.direction === 'down' ? '#2563eb' : '#6b7280';
+  const pointCol = row.direction === 'up' ? '#ef4444' : row.direction === 'down' ? '#3b82f6' : '#9ca3af';
+
+  const curveData = [];
+  for (let i = 0; i < 300; i++) {
+    const lx = logMin + (logMax - logMin) * i / 299;
+    curveData.push({ x: lx, y: ll4(Math.pow(10, lx), row.slope, row.bottom, row.top, row.ec50_nM) });
+  }
+  const obsData = dosesNm
+    .map((d, i) => row.rel_intensities[i] != null ? { x: Math.log10(d), y: row.rel_intensities[i] } : null)
+    .filter(Boolean);
+
+  const ctx = document.getElementById('drc-chart').getContext('2d');
+  S.chart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        { type: 'line',    label: 'Fit', data: curveData, borderColor: curveCol, borderWidth: 2, pointRadius: 0, fill: false, tension: 0, order: 2 },
+        { type: 'scatter', label: 'Observed', data: obsData, backgroundColor: pointCol, pointRadius: 5, pointHoverRadius: 7, order: 1 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 180 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => ` ${Math.pow(10, c.raw.x).toFixed(2)} nM → ${c.raw.y.toFixed(3)}`
+          }
+        },
+        annotation: {
+          annotations: {
+            baseline: { type: 'line', yMin: 1, yMax: 1, borderColor: '#d1d5db', borderDash: [4, 3], borderWidth: 1 },
+            ec50Line: { type: 'line', xMin: Math.log10(row.ec50_nM), xMax: Math.log10(row.ec50_nM), borderColor: curveCol, borderDash: [3, 3], borderWidth: 1 }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear', min: logMin, max: logMax,
+          title: { display: true, text: 'Concentration (nM)', color: '#5a6272' },
+          ticks: {
+            callback: v => {
+              const i = logDoses.findIndex(x => Math.abs(x - v) < 0.01);
+              return i >= 0 ? dosesNm[i] : '';
+            }
+          },
+          grid: { color: '#f3f4f6' }
+        },
+        y: {
+          title: { display: true, text: 'Relative intensity (treatment / mean control)', color: '#5a6272' },
+          grid: { color: '#f3f4f6' }
+        }
+      }
+    }
+  });
+}
+
+function renderMetrics(row) {
+  document.getElementById('metrics-empty').classList.add('hidden');
+  document.getElementById('metrics-content').classList.remove('hidden');
+  const dirCls  = row.direction === 'up' ? 'up' : row.direction === 'down' ? 'down' : 'none';
+  const chipCls = row.direction === 'up' ? 'chip-up' : row.direction === 'down' ? 'chip-down' : 'chip-none';
+  const chipTxt = row.direction === 'up' ? '↑ Up-regulated' : row.direction === 'down' ? '↓ Down-regulated' : '– Unregulated';
+
+  document.getElementById('gene-header-card').innerHTML = `
+    <div class="gene-header ${dirCls}">
+      <div class="gene-name">${escapeHtml(row.gene)}</div>
+      <div class="gene-meta">
+        ${row.protein_id     ? `<div><strong>Protein:</strong> ${escapeHtml(row.protein_id)}</div>` : ''}
+        ${row.sample_name    ? `<div><strong>Sample:</strong> ${escapeHtml(row.sample_name)}</div>` : ''}
+        ${row.gene_aliases   ? `<div><strong>Gene aliases:</strong> ${escapeHtml(row.gene_aliases)}</div>` : ''}
+        ${row.protein_aliases? `<div><strong>Protein aliases:</strong> ${escapeHtml(row.protein_aliases)}</div>` : ''}
+      </div>
+      <span class="direction-chip ${chipCls}">${chipTxt}</span>
+    </div>`;
+
+  const sb = document.getElementById('fit-status-badge');
+  sb.className = 'fit-badge ' + (row.r2 >= 0.9 ? 'fit-ok' : 'fit-warn');
+  sb.textContent = row.r2 >= 0.9
+    ? `✓ Good fit (R² = ${row.r2.toFixed(3)})`
+    : `⚠ Acceptable fit (R² = ${row.r2.toFixed(3)})`;
+
+  document.getElementById('m-ec50').textContent   = `${row.ec50_nM.toFixed(2)} nM`;
+  document.getElementById('m-pec50').textContent  = row.pec50.toFixed(3);
+  document.getElementById('m-slope').textContent  = row.slope.toFixed(3);
+  document.getElementById('m-top').textContent    = row.top.toFixed(3);
+  document.getElementById('m-bottom').textContent = row.bottom.toFixed(3);
+  document.getElementById('m-auc').textContent    = row.auc.toFixed(4);
+  document.getElementById('m-fc').textContent     = row.fc_max.toFixed(3);
+  document.getElementById('m-npts').textContent   = `${row.n_valid} / ${row.doses_nm.length}`;
+
+  const r2El = document.getElementById('m-r2');
+  r2El.textContent = row.r2.toFixed(4);
+  r2El.className   = 'metric-value ' + (row.r2 >= 0.95 ? 'good' : row.r2 >= 0.8 ? 'warn' : 'bad');
+  const pct = Math.round(row.r2 * 100);
+  document.getElementById('r2-bar-fill').style.cssText =
+    `width:${pct}%;background:${row.r2>=0.95?'var(--good)':row.r2>=0.8?'var(--warn)':'var(--bad)'}`;
+}
+
+/* =============================================================
+ *  GENE NAV / TABLE / EXPORT
+ * ============================================================ */
+function populateGeneSelect() {
+  const sel = document.getElementById('gene-select');
+  if (!S.results.length) { sel.innerHTML = '<option value="">— select gene —</option>'; return; }
+  sel.innerHTML = S.results.map((r, i) => {
+    const arrow = r.direction === 'up' ? '↑' : r.direction === 'down' ? '↓' : '–';
+    const sampleSuffix = r.sample_name ? ` | ${r.sample_name}` : '';
+    return `<option value="${i}">${escapeHtml(r.gene)}${escapeHtml(sampleSuffix)} (${arrow})</option>`;
+  }).join('');
+}
+function selectGeneByIndex(idx) {
+  idx = parseInt(idx, 10);
+  if (!Number.isFinite(idx) || idx < 0 || idx >= S.results.length) return;
+  S.selectedIdx = idx;
+  document.getElementById('gene-select').value = String(idx);
+  document.getElementById('prev-btn').disabled = idx <= 0;
+  document.getElementById('next-btn').disabled = idx >= S.results.length - 1;
+  document.getElementById('gene-counter').textContent = `${idx + 1} / ${S.results.length}`;
+
+  const row = S.results[idx];
+  renderPlot(row);
+  renderMetrics(row);
+
+  document.querySelectorAll('#table-body tr').forEach(tr =>
+    tr.classList.toggle('selected', parseInt(tr.dataset.idx, 10) === idx));
+  const active = document.querySelector(`#table-body tr[data-idx="${idx}"]`);
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+function navigateGene(dir) {
+  const n = (S.selectedIdx ?? -1) + dir;
+  if (n >= 0 && n < S.results.length) selectGeneByIndex(n);
+}
+
+function filterTable() {
+  const q    = (document.getElementById('table-search').value || '').toLowerCase();
+  const dFlt = document.getElementById('filter-dir').value;
+  S.filteredRows = S.results.filter(r => {
+    const textMatch = !q || r.search_text.includes(q);
+    const dirMatch  = dFlt === 'all' || r.direction === dFlt;
+    return textMatch && dirMatch;
+  });
+  renderTable();
+  updateTableCount();
+}
+function sortTable(col) {
+  if (S.sortCol === col) S.sortAsc = !S.sortAsc;
+  else { S.sortCol = col; S.sortAsc = true; }
+  filterTable();
+}
+function renderTable() {
+  if (!S.analysisRan) return;
+  const tbody = document.getElementById('table-body');
+  const table = document.getElementById('results-table');
+  const empty = document.getElementById('table-empty');
+  const rows  = [...S.filteredRows].sort((a, b) => {
+    const av = a[S.sortCol], bv = b[S.sortCol];
+    const cmp = (typeof av === 'number' && typeof bv === 'number') ? av - bv : String(av ?? '').localeCompare(String(bv ?? ''));
+    return S.sortAsc ? cmp : -cmp;
+  });
+
+  if (!rows.length) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    empty.textContent   = 'No rows match the current filter.';
+    return;
+  }
+
+  table.style.display = '';
+  empty.style.display = 'none';
+  const showSample = S.experimentType === 'lfq' && S.lfqMode === 'manual';
+  tbody.innerHTML = rows.map(r => {
+    const origIdx = S.results.indexOf(r);
+    const dirCls   = r.direction === 'up' ? 'dir-up' : r.direction === 'down' ? 'dir-down' : 'dir-none';
+    const dirLabel = r.direction === 'up' ? '↑ Up' : r.direction === 'down' ? '↓ Down' : '–';
+    return `<tr data-idx="${origIdx}" class="${S.selectedIdx === origIdx ? 'selected' : ''}">
+      <td class="gene-cell">${escapeHtml(r.gene)}</td>
+      <td style="color:var(--muted);font-size:10.5px;">${escapeHtml(r.protein_id)}</td>
+      <td class="${showSample ? '' : 'hidden'}">${escapeHtml(r.sample_name)}</td>
+      <td><span class="dir-badge ${dirCls}">${dirLabel}</span></td>
+      <td>${r.ec50_nM.toFixed(2)}</td>
+      <td>${r.pec50.toFixed(3)}</td>
+      <td>${r.slope.toFixed(3)}</td>
+      <td>${r.r2.toFixed(4)}</td>
+      <td>${r.auc.toFixed(4)}</td>
+      <td>${r.fc_max.toFixed(3)}</td>
+      <td>${r.n_valid}</td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('tr').forEach(tr =>
+    tr.addEventListener('click', () => selectGeneByIndex(parseInt(tr.dataset.idx, 10))));
+}
+function updateTableCount() {
+  document.getElementById('table-count').textContent =
+    S.analysisRan ? `${S.filteredRows.length} of ${S.results.length} proteins` : '';
+}
+function exportCSV() {
+  if (!S.results.length) { alert('Run analysis first.'); return; }
+  const cols = ['gene','protein_id','sample_name','gene_aliases','protein_aliases','direction',
+                'ec50_nM','pec50','slope','top','bottom','r2','auc','fc_max','n_valid'];
+  const data = S.filteredRows.length ? S.filteredRows : S.results;
+  const csv  = [cols.join(','), ...data.map(r => cols.map(c => JSON.stringify(r[c] ?? '')).join(','))].join('\n');
+  const label = document.getElementById('drug-name-input').value.trim() || 'results';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `drc_${label.replace(/\s+/g, '_')}.csv`;
+  a.click();
+}
+
+/* =============================================================
+ *  STATUS HELPERS
+ * ============================================================ */
+function setStatus(id, type, html) {
+  const el = document.getElementById(id);
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<div class="status-card status-${type}">${html}</div>`;
+}
+function setRunStatus(type, html) { setStatus('run-status', type, html); }
+
+/* =============================================================
+ *  INITIAL WIRE-UP
+ * ============================================================ */
+function bindEvents() {
+  document.getElementById('exp-tmt').addEventListener('click', () => setExperimentType('tmt'));
+  document.getElementById('exp-lfq').addEventListener('click', () => setExperimentType('lfq'));
+  document.getElementById('lfq-mode-mapping').addEventListener('click', () => setLfqMode('mapping'));
+  document.getElementById('lfq-mode-manual' ).addEventListener('click', () => setLfqMode('manual'));
+
+  document.getElementById('protein-input').addEventListener('change', e => handleProteinFile(e.target.files[0]));
+  document.getElementById('mapping-input').addEventListener('change', e => handleMappingFile(e.target.files[0]));
+  document.getElementById('drug-name-input').addEventListener('input', () => {
+    document.getElementById('drug-id-input').classList.remove('auto-filled');
+    document.getElementById('plate-num-input').classList.remove('auto-filled');
+    tryAutoFillDrug();
+  });
+  document.getElementById('lfq-autobuild-btn').addEventListener('click', autoBuildLfqFromMapping);
+
+  document.getElementById('add-control-btn'  ).addEventListener('click', () => addControlRow(''));
+  document.getElementById('add-treatment-btn').addEventListener('click', () => addTreatmentRow('', ''));
+  document.getElementById('autobuild-btn'    ).addEventListener('click', autoBuildGeneric);
+
+  document.getElementById('adv-toggle').addEventListener('click', () => {
+    const body  = document.getElementById('adv-settings');
+    const arrow = document.getElementById('acc-arrow');
+    const label = document.getElementById('acc-label');
+    const open  = body.classList.toggle('open');
+    arrow.textContent = open ? '▾' : '▸';
+    label.textContent = open ? 'Hide advanced settings' : 'Show advanced settings';
+  });
+
+  document.getElementById('run-btn'       ).addEventListener('click', runAnalysis);
+  document.getElementById('export-btn'    ).addEventListener('click', exportCSV);
+  document.getElementById('table-search'  ).addEventListener('input',  filterTable);
+  document.getElementById('filter-dir'    ).addEventListener('change', filterTable);
+  document.getElementById('gene-select'   ).addEventListener('change', e => selectGeneByIndex(e.target.value));
+  document.getElementById('prev-btn'      ).addEventListener('click', () => navigateGene(-1));
+  document.getElementById('next-btn'      ).addEventListener('click', () => navigateGene(1));
+
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => sortTable(th.dataset.col));
+  });
+
+  document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigateGene(-1);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigateGene(1);
+  });
+}
+
+function init() {
+  bindEvents();
+  setExperimentType('tmt');   // default
+  setLfqMode('mapping');      // default within LFQ
+  updateEmptyStates();        // show empty messages in control/treatment lists
+}
+init();
+</script>
+</body>
+</html>
