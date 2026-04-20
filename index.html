@@ -185,7 +185,42 @@
   .hidden { display: none !important; }
 
   .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block; }
+  .spinner-dark { border: 2px solid rgba(37,99,235,.2); border-top-color: var(--accent); }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Biological Interpretation panel ─────────────────────── */
+  #bio-panel { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; max-height: 50vh; }
+  #bio-panel.collapsed { max-height: 38px; }
+  #bio-header { padding: 8px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; background: #f8f9fa; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #bio-header strong { font-size: 12px; }
+  #bio-header .bio-chevron { font-size: 11px; color: var(--muted); transition: transform .15s; }
+  #bio-panel.collapsed #bio-header .bio-chevron { transform: rotate(-90deg); }
+  #bio-header .bio-tag { font-size: 10.5px; color: var(--muted); margin-left: auto; }
+  #bio-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+  #bio-panel.collapsed #bio-body { display: none; }
+  .bio-controls { display: flex; flex-direction: column; gap: 10px; }
+  .bio-controls .config-card { padding: 10px 12px; }
+  .bio-btn-row { display: flex; flex-direction: column; gap: 6px; }
+  .bio-output { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .bio-subsection { border: 1px solid var(--border); border-radius: var(--radius); background: #fcfcfd; }
+  .bio-subheader { padding: 7px 11px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: flex; align-items: center; gap: 8px; }
+  .bio-subheader .bio-count { color: var(--muted2); font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .bio-subbody { padding: 8px 11px; max-height: 260px; overflow: auto; }
+  .bio-empty { padding: 14px; color: var(--muted2); font-size: 11.5px; text-align: center; }
+  .bio-gene-list { display: flex; flex-wrap: wrap; gap: 5px; }
+  .bio-gene-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; border: 1px solid var(--border); background: #fff; }
+  .bio-gene-chip.up   { background: var(--up-light);   color: var(--up);   border-color: #fecaca; }
+  .bio-gene-chip.down { background: var(--down-light); color: var(--down); border-color: #bfdbfe; }
+  .bio-gene-chip .bio-fc { font-variant-numeric: tabular-nums; font-size: 10px; color: inherit; opacity: .75; }
+  .bio-go-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .bio-go-table thead th { position: sticky; top: 0; background: #f8f9fa; padding: 6px 9px; font-weight: 600; font-size: 10.5px; color: var(--muted); text-align: left; border-bottom: 1px solid var(--border); }
+  .bio-go-table tbody td { padding: 5px 9px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .bio-go-table tbody tr:hover { background: #f0f4ff; }
+  .bio-source-pill { display: inline-block; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px; letter-spacing: .04em; }
+  .bio-source-pill.BP { background: #dcfce7; color: #166534; }
+  .bio-source-pill.MF { background: #fef3c7; color: #92400e; }
+  .bio-source-pill.CC { background: #e0e7ff; color: #3730a3; }
+  @media (max-width: 900px) { #bio-body { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -194,7 +229,7 @@
   <!-- ══════════════════════ HEADER ═══════════════════════════ -->
   <div id="header">
     <h1>Protein Dose-Response Curve Generator</h1>
-    <p>Upload TMT reporter-intensity or LFQ proteomics data and fit 4-parameter dose-response curves.</p>
+    <p>Upload proteomics data and fit 4-parameter dose-response curves.</p>
   </div>
 
   <!-- ══════════════════════ MAIN ═════════════════════════════ -->
@@ -203,19 +238,7 @@
     <!-- ─────────────────── LEFT PANEL ───────────────────── -->
     <div id="left-panel" class="panel">
 
-      <!-- 1. Experiment type selector -->
-      <div>
-        <div class="section-title">Experiment type</div>
-        <div class="exp-switch" role="tablist">
-          <button class="exp-btn active" id="exp-tmt"  data-type="tmt" type="button">TMT</button>
-          <button class="exp-btn"        id="exp-lfq"  data-type="lfq" type="button">LFQ</button>
-        </div>
-        <span class="hint" id="exp-hint">
-          TMT: reporter-intensity columns mapped 1-to-1 with doses. One or more control channels.
-        </span>
-      </div>
-
-      <!-- 2. Protein data file (shared) -->
+      <!-- 1. Protein data file -->
       <div>
         <div class="section-title">Protein data file</div>
         <div id="protein-dropzone" class="dropzone"
@@ -242,9 +265,9 @@
         <span class="hint">Only affects how multi-value gene/protein cells are split (`;` or `,` aliases).</span>
       </div>
 
-      <!-- ─────────────── LFQ-only: mapping sheet ─────────────── -->
-      <div id="lfq-section" class="hidden">
-        <div class="section-title" style="margin-top:4px;">LFQ workflow</div>
+      <!-- ─────────────── Workflow options ─────────────── -->
+      <div id="lfq-section">
+        <div class="section-title" style="margin-top:4px;">Workflow</div>
 
         <!-- Sub-mode tabs -->
         <div class="submode-tabs">
@@ -332,7 +355,7 @@
           <label class="form-label">Control columns</label>
           <div id="control-list"></div>
           <button id="add-control-btn" class="btn btn-secondary btn-sm" type="button" style="margin:4px 0 0;">+ Add control column</button>
-          <span class="hint">Intensities from all listed control columns are averaged per row (NaN / zero skipped). TMT often uses one channel; LFQ usually has multiple DMSO replicates.</span>
+          <span class="hint">Intensities from all listed control columns are averaged per row (NaN / zero skipped). Use one or more DMSO control columns as needed.</span>
 
           <div style="margin-top:12px;">
             <label class="form-label">Treatment columns</label>
@@ -500,6 +523,88 @@
     </div>
   </div>
 
+  <!-- ══════════════════════ BIOLOGICAL INTERPRETATION ═══════ -->
+  <div id="bio-panel" class="collapsed">
+    <div id="bio-header" onclick="toggleBioPanel()">
+      <span class="bio-chevron">▾</span>
+      <strong>Biological interpretation</strong>
+      <span class="bio-tag" id="bio-tag">Select a gene subset, then run GO enrichment or open a STRING network.</span>
+    </div>
+    <div id="bio-body">
+      <!-- Controls -->
+      <div class="bio-controls">
+        <div class="config-card">
+          <div class="form-row">
+            <label class="form-label" for="bio-source">Source of proteins</label>
+            <select id="bio-source" class="select-input">
+              <option value="all">All proteins</option>
+              <option value="regulated" selected>Regulated only (↑ or ↓)</option>
+              <option value="up">Up-regulated only</option>
+              <option value="down">Down-regulated only</option>
+              <option value="filtered">Currently filtered table</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="bio-rank">Ranking method</label>
+            <select id="bio-rank" class="select-input">
+              <option value="abs_log2fc" selected>Largest |log2 FC|</option>
+              <option value="highest_fc">Highest fold change</option>
+              <option value="lowest_fc">Lowest fold change</option>
+            </select>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label class="form-label" for="bio-topn">Top N</label>
+              <input id="bio-topn" class="text-input" type="number" value="50" min="1" max="2000" step="1"/>
+            </div>
+            <div class="form-row">
+              <label class="form-label" for="bio-species">Species</label>
+              <select id="bio-species" class="select-input">
+                <option value="hsapiens|9606" selected>Human (9606)</option>
+                <option value="mmusculus|10090">Mouse (10090)</option>
+                <option value="rnorvegicus|10116">Rat (10116)</option>
+                <option value="dmelanogaster|7227">D. melanogaster (7227)</option>
+                <option value="celegans|6239">C. elegans (6239)</option>
+                <option value="scerevisiae|4932">S. cerevisiae (4932)</option>
+                <option value="drerio|7955">Zebrafish (7955)</option>
+              </select>
+            </div>
+          </div>
+          <span class="hint">Ranking uses <code>fc_max</code>. "Largest |log2 FC|" sorts by distance from 1.0 in log space. Selection reuses existing results — nothing is re-fit.</span>
+        </div>
+        <div class="bio-btn-row">
+          <button id="bio-preview-btn"  class="btn btn-secondary btn-sm btn-full" type="button">👁 Preview selected genes</button>
+          <button id="bio-go-btn"       class="btn btn-primary   btn-sm btn-full" type="button">⚛ Run GO enrichment (g:Profiler)</button>
+          <button id="bio-string-btn"   class="btn btn-secondary btn-sm btn-full" type="button">🔗 Open STRING network</button>
+          <button id="bio-export-btn"   class="btn btn-secondary btn-sm btn-full" type="button">⬇ Export GO table (CSV)</button>
+        </div>
+        <div id="bio-status"></div>
+      </div>
+
+      <!-- Output -->
+      <div class="bio-output">
+        <div class="bio-subsection">
+          <div class="bio-subheader">
+            Selected genes
+            <span class="bio-count" id="bio-gene-count"></span>
+          </div>
+          <div class="bio-subbody" id="bio-gene-body">
+            <div class="bio-empty">Click "Preview selected genes" to see the ranked list.</div>
+          </div>
+        </div>
+        <div class="bio-subsection">
+          <div class="bio-subheader">
+            GO enrichment (g:Profiler)
+            <span class="bio-count" id="bio-go-count"></span>
+          </div>
+          <div class="bio-subbody" id="bio-go-body">
+            <div class="bio-empty">Run GO enrichment to populate this table (BP / MF / CC).</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /app -->
 
 <!-- ══════════════════════ JAVASCRIPT ═══════════════════════ -->
@@ -509,8 +614,8 @@
 /* =============================================================
  *  STATE
  *  One object with:
- *    - experimentType   : 'tmt' | 'lfq'
- *    - lfqMode          : 'mapping' | 'manual'   (only meaningful when experimentType === 'lfq')
+ *    - experimentType   : 'lfq'   (fixed workflow)
+ *    - lfqMode          : 'mapping' | 'manual'
  *    - proteinFile      : File
  *    - proteinHeader    : string[] (column names)
  *    - mappingFile      : File  (LFQ mapping sheet, optional)
@@ -518,7 +623,7 @@
  *    - results / filtered / selectedIdx / sort / chart / analysisRan
  * ============================================================ */
 const S = {
-  experimentType: 'tmt',
+  experimentType: 'lfq',
   lfqMode:        'mapping',
   proteinFile:    null,
   proteinHeader:  [],
@@ -605,8 +710,6 @@ function nelderMead(costFn, x0, opts = {}) {
 }
 
 function fitLL4(doses, responses, opts = {}) {
-  const doseMinGuard = opts.doseMinGuard ?? Math.min(...doses) * 0.1;
-  const doseMaxGuard = opts.doseMaxGuard ?? Math.max(...doses) * 10;
   const minEffect    = opts.minEffect    ?? 0.15;
   const minIdx = doses.indexOf(Math.min(...doses));
   const maxIdx = doses.indexOf(Math.max(...doses));
@@ -636,7 +739,6 @@ function fitLL4(doses, responses, opts = {}) {
 
   const [slope, bottom, top, ec50] = best;
   if (!Number.isFinite(ec50) || ec50 <= 0)          return { success: false, reason: `EC50 not finite (${ec50})` };
-  if (ec50 < doseMinGuard || ec50 > doseMaxGuard)   return { success: false, reason: `EC50 out of range (${r3(ec50)} nM)` };
   if (Math.abs(top - bottom) < minEffect)           return { success: false, reason: `flat curve |Δ|=${Math.abs(top-bottom).toFixed(3)}` };
   return { success: true, params: { slope, bottom, top, ec50 } };
 }
@@ -777,20 +879,15 @@ async function parseMatrixFile(file) {
 }
 
 /* =============================================================
- *  EXPERIMENT-TYPE SWITCH
- *  Shows / hides the LFQ-specific panel and reconfigures the
+ *  WORKFLOW MODE
+ *  Keeps the app pinned to the LFQ workflow and reconfigures the
  *  table columns (the "Sample" column only makes sense when the
  *  user may be mixing cell lines/drugs in one file).
  * ============================================================ */
-function setExperimentType(type) {
-  S.experimentType = type;
-  document.getElementById('exp-tmt').classList.toggle('active', type === 'tmt');
-  document.getElementById('exp-lfq').classList.toggle('active', type === 'lfq');
-  document.getElementById('lfq-section').classList.toggle('hidden', type !== 'lfq');
-  document.getElementById('th-sample').classList.toggle('hidden', type !== 'lfq' || S.lfqMode !== 'manual');
-  document.getElementById('exp-hint').textContent = type === 'tmt'
-    ? 'TMT: reporter-intensity columns mapped 1-to-1 with doses. One or more control channels.'
-    : 'LFQ: pick a mapping sheet to auto-fill the columns, or go fully manual (useful for files with multiple cell-line / drug combos).';
+function setExperimentType() {
+  S.experimentType = 'lfq';
+  document.getElementById('lfq-section').classList.remove('hidden');
+  document.getElementById('th-sample').classList.toggle('hidden', S.lfqMode !== 'manual');
 }
 
 function setLfqMode(mode) {
@@ -1263,7 +1360,7 @@ function runPipeline(parsed, config, settings) {
     const validDoses = treatCols.map(t => t.dose).filter((_, i) => validMask[i]);
     const validResp  = relVals.filter(v => Number.isFinite(v));
 
-    const fit = fitLL4(validDoses, validResp, { doseMinGuard, doseMaxGuard, minEffect: settings.minEffect });
+    const fit = fitLL4(validDoses, validResp, { minEffect: settings.minEffect });
     if (!fit.success) continue;
 
     const { slope, bottom, top, ec50 } = fit.params;
@@ -1283,6 +1380,9 @@ function runPipeline(parsed, config, settings) {
                               Math.log10(Math.max(...dosesNm)));
 
     const sampleText = sampleCol >= 0 ? String(row[sampleCol] ?? '').trim() : '';
+    const minDose = Math.min(...dosesNm);
+    const maxDose = Math.max(...dosesNm);
+    const ec50Extrapolated = ec50 < minDose || ec50 > maxDose;
 
     results.push({
       row_index: rowIndex,
@@ -1293,6 +1393,7 @@ function runPipeline(parsed, config, settings) {
       protein_aliases: proteinAliases.join('; '),
       search_text: [gene, ...geneAliases, ...proteinAliases, sampleText].join(' ').toLowerCase(),
       ec50_nM: r3(ec50),
+      ec50_extrapolated: ec50Extrapolated,
       pec50:   r3(pec50),
       slope:   r3(slope),
       top:     r3(top),
@@ -1461,7 +1562,7 @@ function renderMetrics(row) {
     ? `✓ Good fit (R² = ${row.r2.toFixed(3)})`
     : `⚠ Acceptable fit (R² = ${row.r2.toFixed(3)})`;
 
-  document.getElementById('m-ec50').textContent   = `${row.ec50_nM.toFixed(2)} nM`;
+  document.getElementById('m-ec50').textContent   = `${row.ec50_nM.toFixed(2)} nM${row.ec50_extrapolated ? ' (extrap)' : ''}`;
   document.getElementById('m-pec50').textContent  = row.pec50.toFixed(3);
   document.getElementById('m-slope').textContent  = row.slope.toFixed(3);
   document.getElementById('m-top').textContent    = row.top.toFixed(3);
@@ -1559,7 +1660,7 @@ function renderTable() {
       <td style="color:var(--muted);font-size:10.5px;">${escapeHtml(r.protein_id)}</td>
       <td class="${showSample ? '' : 'hidden'}">${escapeHtml(r.sample_name)}</td>
       <td><span class="dir-badge ${dirCls}">${dirLabel}</span></td>
-      <td>${r.ec50_nM.toFixed(2)}</td>
+      <td>${r.ec50_nM.toFixed(2)}${r.ec50_extrapolated ? ' <span style="color:var(--warn);font-size:10px;font-weight:600;">extrap</span>' : ''}</td>
       <td>${r.pec50.toFixed(3)}</td>
       <td>${r.slope.toFixed(3)}</td>
       <td>${r.r2.toFixed(4)}</td>
@@ -1589,6 +1690,241 @@ function exportCSV() {
 }
 
 /* =============================================================
+ *  BIOLOGICAL INTERPRETATION  (additive — no fitting changes)
+ *  Operates purely on S.results / S.filteredRows.
+ * ============================================================ */
+const BIO = {
+  selectedGenes: [],  // ranked [{ gene, fc_max, direction, protein_id, log2fc, abs_log2fc }]
+  goResults:    [],   // g:Profiler results, already filtered to GO BP/MF/CC
+};
+
+function toggleBioPanel(force) {
+  const p = document.getElementById('bio-panel');
+  if (force === 'open')      p.classList.remove('collapsed');
+  else if (force === 'close') p.classList.add('collapsed');
+  else                        p.classList.toggle('collapsed');
+}
+
+function getBioSpecies() {
+  const raw = (document.getElementById('bio-species').value || 'hsapiens|9606').split('|');
+  return { gprofiler: raw[0] || 'hsapiens', stringId: raw[1] || '9606' };
+}
+
+/* Return ranked rows (each with FC + direction). Does not mutate S.results. */
+function getRankedGenes(source, ranking, topN) {
+  if (!S.results.length) return [];
+  let pool;
+  switch (source) {
+    case 'up':        pool = S.results.filter(r => r.direction === 'up'); break;
+    case 'down':      pool = S.results.filter(r => r.direction === 'down'); break;
+    case 'regulated': pool = S.results.filter(r => r.regulated); break;
+    case 'filtered':  pool = [...S.filteredRows]; break;
+    case 'all':
+    default:          pool = [...S.results];
+  }
+
+  const annotated = pool
+    .filter(r => Number.isFinite(r.fc_max) && r.fc_max > 0 && r.gene)
+    .map(r => {
+      const log2fc = Math.log2(r.fc_max);
+      return { ...r, log2fc, abs_log2fc: Math.abs(log2fc) };
+    });
+
+  let sorted;
+  switch (ranking) {
+    case 'highest_fc': sorted = annotated.sort((a, b) => b.fc_max - a.fc_max); break;
+    case 'lowest_fc':  sorted = annotated.sort((a, b) => a.fc_max - b.fc_max); break;
+    case 'abs_log2fc':
+    default:           sorted = annotated.sort((a, b) => b.abs_log2fc - a.abs_log2fc);
+  }
+
+  // De-duplicate by gene symbol (STRING/g:Profiler dislike duplicates).
+  const seen = new Set();
+  const unique = [];
+  for (const r of sorted) {
+    const key = String(r.gene).toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(r);
+    if (unique.length >= topN) break;
+  }
+  return unique;
+}
+
+function readBioControls() {
+  return {
+    source:  document.getElementById('bio-source').value,
+    ranking: document.getElementById('bio-rank').value,
+    topN:    Math.max(1, parseInt(document.getElementById('bio-topn').value, 10) || 50),
+  };
+}
+
+function bioPreview() {
+  if (!S.results.length) { setBioStatus('warn', 'Run analysis first.'); return; }
+  const { source, ranking, topN } = readBioControls();
+  BIO.selectedGenes = getRankedGenes(source, ranking, topN);
+  renderBioGenes();
+  if (!BIO.selectedGenes.length) setBioStatus('warn', 'No genes match the current source.');
+  else                           setBioStatus('ok', `Selected ${BIO.selectedGenes.length} gene${BIO.selectedGenes.length === 1 ? '' : 's'}.`);
+}
+
+function renderBioGenes() {
+  const body = document.getElementById('bio-gene-body');
+  const cnt  = document.getElementById('bio-gene-count');
+  if (!BIO.selectedGenes.length) {
+    body.innerHTML = '<div class="bio-empty">No genes selected yet.</div>';
+    cnt.textContent = '';
+    return;
+  }
+  cnt.textContent = `(${BIO.selectedGenes.length})`;
+  body.innerHTML = `
+    <div class="bio-gene-list">
+      ${BIO.selectedGenes.map(g => {
+        const cls   = g.direction === 'up' ? 'up' : g.direction === 'down' ? 'down' : '';
+        const arrow = g.direction === 'up' ? '↑' : g.direction === 'down' ? '↓' : '–';
+        const fc    = Number.isFinite(g.fc_max) ? g.fc_max.toFixed(2) : '—';
+        return `<span class="bio-gene-chip ${cls}" title="${escapeHtml(g.protein_id || '')} — FC ${fc}, log2FC ${g.log2fc.toFixed(2)}">
+          ${arrow} ${escapeHtml(g.gene)} <span class="bio-fc">FC ${fc}</span>
+        </span>`;
+      }).join('')}
+    </div>`;
+}
+
+/* Open STRING network in a new tab, pre-filled with ranked genes. */
+function openStringNetwork(genes, stringId) {
+  if (!genes || !genes.length) { setBioStatus('warn', 'No genes selected — click "Preview" first.'); return; }
+  const ids = genes.map(g => String(g.gene || g).trim()).filter(Boolean);
+  if (!ids.length) { setBioStatus('warn', 'Selected list has no usable gene symbols.'); return; }
+  // %0d = carriage return, the separator STRING expects in the URL.
+  const url = `https://string-db.org/cgi/network?identifiers=${encodeURIComponent(ids.join('\r'))}&species=${encodeURIComponent(stringId)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+  setBioStatus('info', `Opened STRING network for ${ids.length} genes (species ${stringId}).`);
+}
+
+/* Query g:Profiler for GO BP/MF/CC enrichment. */
+async function runGoEnrichment(genes, gprofilerOrganism) {
+  const ids = (genes || []).map(g => String(g.gene || g).trim()).filter(Boolean);
+  if (!ids.length) throw new Error('No genes to enrich. Click "Preview" first.');
+
+  const body = {
+    organism: gprofilerOrganism,
+    query: ids,
+    sources: ['GO:BP', 'GO:MF', 'GO:CC'],
+    user_threshold: 0.05,
+    significance_threshold_method: 'fdr',
+    all_results: false,
+    ordered: false,
+    no_iea: false,
+    combined: false,
+    measure_underrepresentation: false,
+    domain_scope: 'annotated',
+    numeric_namespace: 'ENTREZGENE_ACC',
+    output: 'json',
+  };
+
+  const resp = await fetch('https://biit.cs.ut.ee/gprofiler/api/gost/profile/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`g:Profiler HTTP ${resp.status}`);
+  const json = await resp.json();
+  const results = (json && json.result) ? json.result : [];
+  return results
+    .filter(r => typeof r.source === 'string' && r.source.startsWith('GO:'))
+    .map(r => ({
+      term_id:       r.native || r.term_id || '',
+      name:          r.name   || '',
+      source:        r.source || '',
+      p_value:       Number(r.p_value),
+      intersection_size: Number(r.intersection_size ?? 0),
+      term_size:         Number(r.term_size ?? 0),
+      query_size:        Number(r.query_size ?? ids.length),
+    }))
+    .sort((a, b) => a.p_value - b.p_value);
+}
+
+async function bioRunGo() {
+  if (!BIO.selectedGenes.length) bioPreview();
+  if (!BIO.selectedGenes.length) return;
+  const btn = document.getElementById('bio-go-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  setBioStatus('info', `⟳ Querying g:Profiler (${BIO.selectedGenes.length} genes)…`);
+  try {
+    const { gprofiler } = getBioSpecies();
+    BIO.goResults = await runGoEnrichment(BIO.selectedGenes, gprofiler);
+    renderBioGo();
+    setBioStatus(
+      BIO.goResults.length ? 'ok' : 'warn',
+      BIO.goResults.length
+        ? `✓ ${BIO.goResults.length} enriched GO terms (FDR < 0.05).`
+        : 'No significant GO terms returned (FDR < 0.05).'
+    );
+  } catch (err) {
+    console.error(err);
+    setBioStatus('error', '✕ ' + escapeHtml(err.message || String(err)));
+  }
+  btn.disabled = false;
+  btn.innerHTML = '⚛ Run GO enrichment (g:Profiler)';
+}
+
+function renderBioGo() {
+  const body = document.getElementById('bio-go-body');
+  const cnt  = document.getElementById('bio-go-count');
+  if (!BIO.goResults.length) {
+    body.innerHTML = '<div class="bio-empty">No enriched terms.</div>';
+    cnt.textContent = '';
+    return;
+  }
+  cnt.textContent = `(${BIO.goResults.length})`;
+  body.innerHTML = `
+    <table class="bio-go-table">
+      <thead>
+        <tr>
+          <th style="width:44px;">Src</th>
+          <th>Term</th>
+          <th style="width:110px;">Adj. p-value</th>
+          <th style="width:70px;">Intersect.</th>
+          <th style="width:70px;">Term size</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${BIO.goResults.slice(0, 200).map(r => {
+          const tag = r.source.replace('GO:', '');       // BP / MF / CC
+          const url = r.term_id
+            ? `https://amigo.geneontology.org/amigo/term/${encodeURIComponent(r.term_id)}`
+            : '';
+          const nameCell = url
+            ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.name)}</a>
+               <div class="small-muted">${escapeHtml(r.term_id)}</div>`
+            : `${escapeHtml(r.name)} <div class="small-muted">${escapeHtml(r.term_id)}</div>`;
+          return `<tr>
+            <td><span class="bio-source-pill ${tag}">${tag}</span></td>
+            <td>${nameCell}</td>
+            <td style="font-variant-numeric:tabular-nums;">${Number.isFinite(r.p_value) ? r.p_value.toExponential(2) : '—'}</td>
+            <td style="font-variant-numeric:tabular-nums;">${r.intersection_size}</td>
+            <td style="font-variant-numeric:tabular-nums;color:var(--muted);">${r.term_size}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function bioExportGo() {
+  if (!BIO.goResults.length) { setBioStatus('warn', 'Run GO enrichment first.'); return; }
+  const cols = ['source', 'term_id', 'name', 'p_value', 'intersection_size', 'term_size', 'query_size'];
+  const csv  = [cols.join(','), ...BIO.goResults.map(r => cols.map(c => JSON.stringify(r[c] ?? '')).join(','))].join('\n');
+  const label = document.getElementById('drug-name-input').value.trim() || 'go';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `go_enrichment_${label.replace(/\s+/g, '_')}.csv`;
+  a.click();
+}
+
+function setBioStatus(type, html) { setStatus('bio-status', type, html); }
+
+/* =============================================================
  *  STATUS HELPERS
  * ============================================================ */
 function setStatus(id, type, html) {
@@ -1603,8 +1939,6 @@ function setRunStatus(type, html) { setStatus('run-status', type, html); }
  *  INITIAL WIRE-UP
  * ============================================================ */
 function bindEvents() {
-  document.getElementById('exp-tmt').addEventListener('click', () => setExperimentType('tmt'));
-  document.getElementById('exp-lfq').addEventListener('click', () => setExperimentType('lfq'));
   document.getElementById('lfq-mode-mapping').addEventListener('click', () => setLfqMode('mapping'));
   document.getElementById('lfq-mode-manual' ).addEventListener('click', () => setLfqMode('manual'));
 
@@ -1647,11 +1981,27 @@ function bindEvents() {
     if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navigateGene(-1);
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navigateGene(1);
   });
+
+  // Biological interpretation panel
+  document.getElementById('bio-preview-btn').addEventListener('click', bioPreview);
+  document.getElementById('bio-go-btn'     ).addEventListener('click', bioRunGo);
+  document.getElementById('bio-string-btn' ).addEventListener('click', () => {
+    if (!BIO.selectedGenes.length) bioPreview();
+    if (!BIO.selectedGenes.length) return;
+    openStringNetwork(BIO.selectedGenes, getBioSpecies().stringId);
+  });
+  document.getElementById('bio-export-btn' ).addEventListener('click', bioExportGo);
+  // Re-preview when controls change (cheap, purely in-memory).
+  ['bio-source','bio-rank','bio-topn'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => {
+      if (BIO.selectedGenes.length) bioPreview();
+    })
+  );
 }
 
 function init() {
   bindEvents();
-  setExperimentType('tmt');   // default
+  setExperimentType();        // fixed default
   setLfqMode('mapping');      // default within LFQ
   updateEmptyStates();        // show empty messages in control/treatment lists
 }
