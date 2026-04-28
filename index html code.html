@@ -972,7 +972,7 @@ function bfgsStyleMinimize(costFn, x0, bounds, opts = {}) {
 
 function fitLL4bfgs(doses, responses, start) {
   const theta0 = [start[0], start[1], start[2], Math.log(Math.max(start[3], 1e-12))];
-  const bounds = [[-50, 50], [-100, 100], [-100, 100], [-Infinity, Infinity]];
+  const bounds = [-Infinity, Infinity];
   const costTheta = theta => {
     const ec50 = Math.exp(theta[3]);
     return sseLL4(doses, responses, theta[0], theta[1], theta[2], ec50);
@@ -1002,7 +1002,7 @@ function fitLL4(doses, responses, opts = {}) {
       const start = [s0, bottom0, top0, ec50_0];
       const res = optimizer === 'nelder-mead'
         ? nelderMead(costFn, start, { maxIter: 3000, tol: 1e-12 })
-        : fitLL4Lbfgsb(doses, responses, start);
+        : fitLL4bfgs(doses, responses, start);
       if (res.fval < bestCost) { bestCost = res.fval; best = res.x; }
     } catch (_) { /* ignore */ }
   }
